@@ -1,0 +1,7 @@
+[MASTER]
+# PyQt6 and cv2 are C extensions — pylint cannot introspect them.
+extension-pkg-allow-list=PyQt6,cv2
+
+[MESSAGES CONTROL]
+# no-member: cv2 and PIL members are resolved at runtime from C extensions.
+disable=no-member

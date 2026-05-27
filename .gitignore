@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Type / lint caches
+.mypy_cache/
+.ruff_cache/
+.pylint.d/
+
+# Tools
+.codegraph/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / local config
+.env
+*.env.local
+
+# Project-specific
+*.cpce.bak
+data-training/
+CLAUDE.md

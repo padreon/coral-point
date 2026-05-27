@@ -1,0 +1,21 @@
+{
+  "codes": {
+    "HC": "Hard Coral",
+    "SC": "Soft Coral",
+    "MA": "Macro Algae",
+    "TA": "Turf Algae",
+    "CCA": "Crustose Coralline Algae",
+    "SP": "Sponge",
+    "ZO": "Zoanthid",
+    "RB": "Rubble",
+    "SD": "Sand",
+    "SI": "Silt",
+    "RK": "Rock / Bare Substrate",
+    "OT": "Other"
+  },
+  "groups": [
+    {"name": "Hard Coral", "codes": ["HC", "CCA", "ZO"]},
+    {"name": "Soft / Algae", "codes": ["SC", "SP", "MA", "TA"]},
+    {"name": "Substrate",   "codes": ["RB", "SD", "SI", "RK", "OT"]}
+  ]
+}
