@@ -48,7 +48,8 @@ class ImageCanvas(QWidget):
         self._coral_codes = coral_codes
         from PIL import Image as PILImage
         try:
-            pil_img = PILImage.open(annotation.image_path).convert("RGB")
+            with PILImage.open(annotation.image_path) as img:
+                pil_img = img.convert("RGB").copy()
         except Exception:
             self.status_message.emit(f"Cannot load: {annotation.image_path}")
             return

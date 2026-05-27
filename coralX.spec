@@ -75,7 +75,7 @@ _stdlib_exclude = [
     'email',
     'html',
     'http',
-    'xml',
+    # 'xml' removed - needed by openpyxl for parsing
     'xmlrpc',
     'ftplib',
     'imaplib',

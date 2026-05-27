@@ -1295,8 +1295,12 @@ class MainWindow(QMainWindow):
             from PIL import Image as PILImage
             with PILImage.open(ann.image_path) as _img:
                 ann.image_width, ann.image_height = _img.size
-        except Exception:
-            pass
+        except Exception as e:
+            # Reset stale geometry on error
+            ann.image_width = None
+            ann.image_height = None
+            import logging
+            logging.error(f"Failed to read image dimensions for {ann.image_path}: {e}")
 
         if self.project.border_rect:
             self.canvas.set_border_rect(tuple(self.project.border_rect))
