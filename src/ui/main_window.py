@@ -70,7 +70,9 @@ class ManageGroupsDialog(QDialog):
 
         self._table = QTableWidget(0, 2)
         self._table.setHorizontalHeaderLabels(["Group Name", "Codes (comma-separated)"])
-        self._table.horizontalHeader().setStretchLastSection(True)
+        _header = self._table.horizontalHeader()
+        if _header is not None:
+            _header.setStretchLastSection(True)
         self._table.setColumnWidth(0, 150)
         layout.addWidget(self._table)
 
@@ -1221,6 +1223,7 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
         )
         if reply == QMessageBox.StandardButton.Yes:
+            assert self.project is not None
             self.project.stations.remove(station)
             self._refresh_image_tree()
             ann = self._current_annotation()
@@ -1616,7 +1619,8 @@ class MainWindow(QMainWindow):
         self._syncing = False
 
     def _set_status(self, msg: str):
-        self.statusBar().showMessage(msg)
+        if (bar := self.statusBar()) is not None:
+            bar.showMessage(msg)
 
     # ---------------------------------------------------------------- AI label
 
@@ -1702,6 +1706,8 @@ class MainWindow(QMainWindow):
         # set until the thread completes, preventing concurrent runs.
 
     def _on_ai_results_ready(self, results: list) -> None:
+        if self.project is None:
+            return
         label_map: dict[str, dict[int, str]] = {}
         for r in results:
             if r.mapped_code is not None:

@@ -148,7 +148,7 @@ def install_excepthook() -> None:
 
 def install_qt_message_handler() -> None:
     """Forward Qt debug/warning/critical messages into the Python logger."""
-    from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
+    from PyQt6.QtCore import QMessageLogContext, QtMsgType, qInstallMessageHandler
 
     _qt_log = logging.getLogger("coralX.qt")
     _level_map = {
@@ -159,9 +159,9 @@ def install_qt_message_handler() -> None:
         QtMsgType.QtFatalMsg: logging.CRITICAL,
     }
 
-    def _handler(msg_type: QtMsgType, context, message: str) -> None:
+    def _handler(msg_type: QtMsgType, context: QMessageLogContext, message: str | None) -> None:
         level = _level_map.get(msg_type, logging.WARNING)
         loc = f"{context.file or '?'}:{context.line or 0}"
-        _qt_log.log(level, "%s  (%s)", message, loc)
+        _qt_log.log(level, "%s  (%s)", message or "", loc)
 
     qInstallMessageHandler(_handler)

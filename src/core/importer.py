@@ -403,8 +403,8 @@ def import_labeled_points(path: str, project: Project) -> ImportResult:
 
     # Build lookup: basename → annotation
     ann_map: dict[str, ImageAnnotation] = {}
-    for ann in project.annotations:
-        ann_map[os.path.basename(ann.image_path).lower()] = ann
+    for a in project.annotations:
+        ann_map[os.path.basename(a.image_path).lower()] = a
 
     matched = 0
     skipped_images: set[str] = set()
@@ -506,7 +506,7 @@ def import_cpce_excel(path: str) -> tuple[Optional[Project], ImportResult]:
         frames = {target_sheet: pd.read_excel(path, sheet_name=target_sheet, dtype=str).fillna("")}
     else:
         # Load all sheets — will try each
-        frames = {s: pd.read_excel(path, sheet_name=s, dtype=str).fillna("")
+        frames = {str(s): pd.read_excel(path, sheet_name=s, dtype=str).fillna("")
                   for s in xf.sheet_names}
 
     def _detect_cols(df: pd.DataFrame) -> dict:
@@ -731,6 +731,8 @@ def import_cpce_cpc(
             f"Estimated dimensions {img_width}×{img_height} px from .cpc header (96 DPI)."
         )
 
+    assert img_width is not None
+    assert img_height is not None
     scale_x = img_width  / int_width
     scale_y = img_height / int_height
 

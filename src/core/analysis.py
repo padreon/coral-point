@@ -145,7 +145,9 @@ def cover_area_per_code(annotation: ImageAnnotation) -> Optional[dict[str, float
     total = len(labeled)
     counts: dict[str, int] = {}
     for pt in labeled:
-        counts[pt.label] = counts.get(pt.label, 0) + 1  # type: ignore[index]
+        label = pt.label
+        assert label is not None
+        counts[label] = counts.get(label, 0) + 1
 
     return {code: round(p_area * cnt / total, 4) for code, cnt in counts.items()}
 

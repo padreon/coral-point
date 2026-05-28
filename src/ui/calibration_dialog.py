@@ -160,8 +160,10 @@ class CalibrationDialog(QDialog):
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Apply Calibration")
-        self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+        _ok_btn = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if _ok_btn is not None:
+            _ok_btn.setText("Apply Calibration")
+            _ok_btn.setEnabled(False)
         self._buttons.accepted.connect(self._apply)
         self._buttons.rejected.connect(self.reject)
 
@@ -185,12 +187,15 @@ class CalibrationDialog(QDialog):
 
     def _on_points_changed(self, pts: list):
         px_dist = self._canvas.pixel_distance()
+        _ok_btn = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
         if px_dist is not None:
             self._lbl_px_dist.setText(f"Pixel distance: {px_dist:.1f} px")
-            self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
+            if _ok_btn is not None:
+                _ok_btn.setEnabled(True)
         else:
             self._lbl_px_dist.setText("Pixel distance: —")
-            self._buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+            if _ok_btn is not None:
+                _ok_btn.setEnabled(False)
         self._update_preview()
 
     def _update_preview(self):
