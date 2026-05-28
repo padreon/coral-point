@@ -33,6 +33,18 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Install UPX (Windows)
+        if: runner.os == 'Windows'
+        run: choco install upx --yes
+
+      - name: Install UPX (macOS)
+        if: runner.os == 'macOS'
+        run: brew install upx
+
+      - name: Install UPX (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y upx-ucl
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -40,6 +52,10 @@ jobs:
 
       - name: Build with PyInstaller
         run: pyinstaller coralx.spec --noconfirm
+
+      - name: Show build size
+        shell: bash
+        run: du -sh dist/coralX* 2>/dev/null || true
 
       # ── Windows: zip the dist folder ──────────────────────────────────
       - name: Package (Windows)

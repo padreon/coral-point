@@ -7,8 +7,13 @@ Build:
     pyinstaller coralx.spec
 
 Output:
-    dist/coralX          (Linux / macOS binary or .app)
-    dist/coralX.exe      (Windows)
+    dist/coralX/         (Linux / macOS)
+    dist/coralX/         (Windows — contains coralX.exe)
+
+Expected sizes after optimization:
+    Windows:  ~80–100 MB  (down from ~338 MB)
+    macOS:    ~70–90 MB
+    Linux:    ~70–90 MB
 """
 
 import sys
@@ -17,6 +22,34 @@ from pathlib import Path
 ROOT = Path(SPECPATH)
 
 block_cipher = None
+
+# ---------------------------------------------------------------------------
+# Qt modules coralX does NOT use — excluding these cuts ~150–200 MB
+# ---------------------------------------------------------------------------
+_EXCLUDED_QT = [
+    "Qt6WebEngine", "Qt6WebEngineCore", "Qt6WebEngineWidgets",
+    "Qt6WebEngineQuick", "Qt6WebView",
+    "Qt6Multimedia", "Qt6MultimediaWidgets", "Qt6MultimediaQuick",
+    "Qt6Quick", "Qt6QuickWidgets", "Qt6QuickControls2",
+    "Qt6Qml", "Qt6QmlModels", "Qt6QmlWorkerScript",
+    "Qt6Network",
+    "Qt6Sql",
+    "Qt6Test",
+    "Qt6Bluetooth",
+    "Qt6SerialPort",
+    "Qt6Location",
+    "Qt6Positioning",
+    "Qt6Charts",
+    "Qt6DataVisualization",
+    "Qt63DCore", "Qt63DRender", "Qt63DInput", "Qt63DLogic", "Qt63DAnimation",
+    "Qt6VirtualKeyboard",
+    "Qt6Pdf", "Qt6PdfWidgets",
+    # macOS / Linux equivalents (no "6" suffix variant)
+    "QtWebEngine", "QtWebEngineCore", "QtWebEngineWidgets",
+    "QtMultimedia", "QtMultimediaWidgets",
+    "QtQuick", "QtQml", "QtNetwork", "QtSql", "QtTest",
+    "QtBluetooth", "QtCharts",
+]
 
 a = Analysis(
     [str(ROOT / "src" / "main.py")],
@@ -27,7 +60,6 @@ a = Analysis(
         (str(ROOT / "data" / "data-training.pt"),         "data"),
     ],
     hiddenimports=[
-        # PyQt6 internals that PyInstaller sometimes misses
         "PyQt6.QtPrintSupport",
         "PyQt6.sip",
     ],
@@ -35,19 +67,50 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Dev tools — not needed at runtime
+        # Qt modules not used by coralX
+        "PyQt6.QtWebEngine", "PyQt6.QtWebEngineWidgets", "PyQt6.QtWebEngineCore",
+        "PyQt6.QtMultimedia", "PyQt6.QtMultimediaWidgets",
+        "PyQt6.QtQuick", "PyQt6.QtQuickWidgets",
+        "PyQt6.QtQml", "PyQt6.QtQmlModels",
+        "PyQt6.QtNetwork",
+        "PyQt6.QtSql",
+        "PyQt6.QtTest",
+        "PyQt6.QtBluetooth",
+        "PyQt6.QtCharts",
+        "PyQt6.QtDataVisualization",
+        "PyQt6.Qt3DCore", "PyQt6.Qt3DRender",
+        # AI / ML stack — optional, user installs separately
+        "ultralytics", "torch", "torchvision", "torchaudio",
+        # Dev tools
         "ruff", "mypy", "pylint",
-        # Large optional packages not needed unless user installs them
-        "ultralytics", "torch", "torchvision",
-        # Notebook / IPython stack
-        "IPython", "ipykernel", "jupyter",
-        "matplotlib", "tkinter",
+        # Unused scientific stack
+        "matplotlib", "tkinter", "wx",
+        # Notebook / IPython
+        "IPython", "ipykernel", "jupyter", "nbformat",
+        # Unused scipy submodules (keep scipy.stats, scipy.spatial)
+        "scipy.io", "scipy.signal", "scipy.optimize",
+        "scipy.integrate", "scipy.interpolate", "scipy.linalg",
+        "scipy.fft", "scipy.ndimage",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
+# ---------------------------------------------------------------------------
+# Strip unused Qt shared libraries from the collected binaries
+# This is the most effective size reduction step (~150 MB on Windows)
+# ---------------------------------------------------------------------------
+def _should_exclude(name: str) -> bool:
+    name_lower = name.lower()
+    return any(excl.lower() in name_lower for excl in _EXCLUDED_QT)
+
+a.binaries = [
+    (name, path, typecode)
+    for name, path, typecode in a.binaries
+    if not _should_exclude(name)
+]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -59,14 +122,14 @@ exe = EXE(
     name="coralX",
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,          # compress with UPX if available (smaller binary)
-    console=False,     # no terminal window on Windows / macOS
+    strip=sys.platform != "win32",  # strip debug symbols on Linux/macOS
+    upx=True,
+    console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,         # add icon path here when available, e.g. "assets/icon.ico"
+    icon=None,  # set to "assets/icon.ico" (Win) or "assets/icon.icns" (mac)
 )
 
 coll = COLLECT(
@@ -74,18 +137,17 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=False,
+    strip=sys.platform != "win32",
     upx=True,
-    upx_exclude=[],
+    upx_exclude=["vcruntime140.dll", "python3*.dll"],
     name="coralX",
 )
 
-# macOS: wrap in a .app bundle
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="coralX.app",
-        icon=None,         # add "assets/icon.icns" when available
+        icon=None,
         bundle_identifier="com.coralx.app",
         info_plist={
             "NSHighResolutionCapable": True,
