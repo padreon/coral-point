@@ -26,7 +26,9 @@ class ClassMappingTable(QTableWidget):
         super().__init__(0, 2, parent)
         self._coral_codes = coral_codes
         self.setHorizontalHeaderLabels(["Model Class", "Coral Code"])
-        self.horizontalHeader().setStretchLastSection(True)
+        header = self.horizontalHeader()
+        if header is not None:
+            header.setStretchLastSection(True)
         self.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
@@ -45,7 +47,8 @@ class ClassMappingTable(QTableWidget):
     def get_mapping(self) -> dict[str, str | None]:
         result: dict[str, str | None] = {}
         for row in range(self.rowCount()):
-            cls_name = self.item(row, 0).text()
+            item = self.item(row, 0)
+            cls_name = item.text() if item is not None else ""
             widget = self.cellWidget(row, 1)
             value = widget.currentText() if isinstance(widget, QComboBox) else "(skip)"
             result[cls_name] = None if value == "(skip)" else value
@@ -130,7 +133,9 @@ class AILabelDialog(QDialog):
 
         # --- Buttons ---
         self._btn_box = QDialogButtonBox()
-        self._run_btn = self._btn_box.addButton("Run", QDialogButtonBox.ButtonRole.AcceptRole)
+        run_btn = self._btn_box.addButton("Run", QDialogButtonBox.ButtonRole.AcceptRole)
+        assert run_btn is not None
+        self._run_btn: QPushButton = run_btn
         self._btn_box.addButton(QDialogButtonBox.StandardButton.Cancel)
         self._run_btn.setEnabled(False)
         self._btn_box.accepted.connect(self.accept)
@@ -168,7 +173,14 @@ class AILabelDialog(QDialog):
             self._mapping_table.populate(suggestions)
             self._labeler = labeler
             self._run_btn.setEnabled(True)
-        except Exception as exc:
+            task_label = "detection" if labeler.task == "detect" else "classification"
+            QMessageBox.information(
+                self, "Model loaded",
+                f"Model loaded successfully.\n"
+                f"Type: {task_label}\n"
+                f"Classes ({len(labeler.class_names())}): {', '.join(labeler.class_names())}",
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             QMessageBox.critical(self, "Failed to load model", str(exc))
 
     def accept(self) -> None:
@@ -259,7 +271,8 @@ class AIProgressDialog(QDialog):
         self._log.append(f"  {status}")
         # Auto-scroll to bottom
         scrollbar = self._log.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        if scrollbar is not None:
+            scrollbar.setValue(scrollbar.maximum())
 
     def on_error(self, msg: str) -> None:
         self._log.append(f"<span style='color:red'>ERROR: {msg}</span>")

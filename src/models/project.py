@@ -34,7 +34,7 @@ class ImageAnnotation:
         total = len(labeled)
         stats: dict[str, int] = {}
         for p in labeled:
-            key = p.label
+            key = p.label or ""
             stats[key] = stats.get(key, 0) + 1
         return {k: round(v / total * 100, 2) for k, v in stats.items()}
 
@@ -114,13 +114,13 @@ class Project:
                 for s in self.stations
             ],
         }
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         self.save_path = path
 
     @classmethod
     def load(cls, path: str) -> "Project":
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         project = cls(

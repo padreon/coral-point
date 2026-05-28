@@ -32,3 +32,5 @@ Thumbs.db
 *.cpce.bak
 data-training/
 CLAUDE.md
+tools/training_config.yaml
+training_data/

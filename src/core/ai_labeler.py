@@ -28,12 +28,17 @@ class LabelResult:
 
 
 class AILabeler:
-    """Wraps a YOLOv8 classification model for per-point coral code prediction."""
+    """Wraps a YOLOv8 classification or detection model for per-point coral code prediction."""
 
     def __init__(self, model_path: str) -> None:
         from ultralytics import YOLO
         self._model = YOLO(model_path)
         self._class_names: dict[int, str] = self._model.names
+        self._task: str = getattr(self._model, "task", "classify") or "classify"
+
+    @property
+    def task(self) -> str:
+        return self._task
 
     def class_names(self) -> list[str]:
         return list(self._class_names.values())
@@ -53,9 +58,9 @@ class AILabeler:
         pad_l = max(0, half - cx)
         pad_r = max(0, cx + half - w)
         if pad_t or pad_b or pad_l or pad_r:
-            crop = cv2.copyMakeBorder(  # type: ignore[call-overload]
+            crop = cv2.copyMakeBorder(  # type: ignore[call-overload]  # pylint: disable=no-member
                 crop, int(pad_t), int(pad_b), int(pad_l), int(pad_r),
-                cv2.BORDER_CONSTANT, value=0,
+                cv2.BORDER_CONSTANT, value=0,  # pylint: disable=no-member
             )
         return crop
 
@@ -65,6 +70,13 @@ class AILabeler:
         x: float,
         y: float,
         crop_size: int = 64,
+    ) -> tuple[str, float]:
+        if self._task == "classify":
+            return self._predict_classify(image, x, y, crop_size)
+        return self._predict_detect(image, x, y, crop_size)
+
+    def _predict_classify(
+        self, image: np.ndarray, x: float, y: float, crop_size: int
     ) -> tuple[str, float]:
         crop = self._crop_around(image, x, y, crop_size)
         results = self._model(crop, verbose=False)
@@ -77,6 +89,32 @@ class AILabeler:
         class_name = self._class_names[int(probs.top1)]
         confidence = float(probs.top1conf)
         return class_name, confidence
+
+    def _predict_detect(
+        self, image: np.ndarray, x: float, y: float, crop_size: int
+    ) -> tuple[str, float]:
+        # Use a larger crop so nearby corals are visible for detection
+        detect_size = max(crop_size * 3, 224)
+        crop = self._crop_around(image, x, y, detect_size)
+        results = self._model(crop, verbose=False)
+        boxes = results[0].boxes
+        if boxes is None or len(boxes) == 0:
+            return "(no detection)", 0.0
+
+        # Find the detection box whose center is closest to the point
+        center = detect_size / 2.0
+        best_idx = 0
+        best_dist = float("inf")
+        for i, box in enumerate(boxes.xywh):
+            bx, by = float(box[0]), float(box[1])
+            dist = ((bx - center) ** 2 + (by - center) ** 2) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+
+        cls_id = int(boxes.cls[best_idx])
+        confidence = float(boxes.conf[best_idx])
+        return self._class_names[cls_id], confidence
 
     @staticmethod
     def suggest_mapping(
@@ -177,14 +215,14 @@ class AILabelWorker(QThread):
                             f"{predicted_class} → {mapped_code or '(skip)'} "
                             f"({confidence:.1%})"
                         )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                         self.error.emit(f"{img_name} — Point #{p.index + 1}: {exc}")
                         point_status = f"{img_name} — Point #{p.index + 1}: (error)"
 
                     done += 1
                     self.progress.emit(done, total, point_status)
 
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             self.error.emit(str(exc))
 
         self.result_ready.emit(results)

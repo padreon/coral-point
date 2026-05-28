@@ -1,0 +1,15 @@
+# Copy this file to training_config.yaml and fill in your details.
+# training_config.yaml is gitignored — your API key will not be committed.
+
+roboflow:
+  api_key: ""       # your Roboflow API key (app.roboflow.com → Settings → API Key)
+  workspace: ""     # workspace slug from the dataset URL
+  project: ""       # project slug from the dataset URL
+  version: 1
+
+training:
+  epochs: 100
+  imgsz: 64         # match coralX AI Auto-Label crop_size setting
+  batch: 32
+  base_model: yolov8n-cls.pt
+  work_dir: training_data
