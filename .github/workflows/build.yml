@@ -1,0 +1,109 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "v*"          # trigger on version tags: v1.0.0, v1.2.3, etc.
+  workflow_dispatch:  # allow manual trigger from GitHub Actions tab
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: coralX.exe
+            dist_path: dist/coralX/coralX.exe
+
+          - os: macos-latest
+            artifact: coralX-mac.zip
+            dist_path: dist/coralX.app
+
+          - os: ubuntu-latest
+            artifact: coralX-linux.tar.gz
+            dist_path: dist/coralX
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller coralx.spec --noconfirm
+
+      # ── Windows: zip the dist folder ──────────────────────────────────
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist\coralX -DestinationPath coralX-windows.zip
+
+      # ── macOS: zip the .app bundle ─────────────────────────────────────
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: zip -r coralX-mac.zip dist/coralX.app
+
+      # ── Linux: tar.gz the dist folder ─────────────────────────────────
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czvf coralX-linux.tar.gz -C dist coralX
+
+      # ── Upload artifact for this run ───────────────────────────────────
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            coralX-windows.zip
+            coralX-mac.zip
+            coralX-linux.tar.gz
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ── Create GitHub Release when triggered by a tag ─────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: coralX ${{ github.ref_name }}
+          body: |
+            ## coralX ${{ github.ref_name }}
+
+            ### Download
+
+            | Platform | File |
+            |---|---|
+            | Windows | `coralX-windows.zip` → extract → run `coralX.exe` |
+            | macOS | `coralX-mac.zip` → extract → open `coralX.app` |
+            | Linux | `coralX-linux.tar.gz` → extract → run `./coralX` |
+
+            ### Notes
+            - No Python installation required
+            - AI auto-label requires installing ultralytics separately:
+              `pip install ultralytics>=8.0.0`
+          files: artifacts/*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

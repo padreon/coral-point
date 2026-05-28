@@ -11,6 +11,12 @@ Thank you for your interest in contributing! This guide covers how to set up the
 3. [Code Conventions](#3-code-conventions)
 4. [Running the App](#4-running-the-app)
 5. [Linting and Type Checking](#5-linting-and-type-checking)
+6. [Building Standalone Executables](#6-building-standalone-executables)
+7. [Submitting a Pull Request](#7-submitting-a-pull-request)
+8. [Areas Open for Contribution](#8-areas-open-for-contribution)
+3. [Code Conventions](#3-code-conventions)
+4. [Running the App](#4-running-the-app)
+5. [Linting and Type Checking](#5-linting-and-type-checking)
 6. [Submitting a Pull Request](#6-submitting-a-pull-request)
 7. [Areas Open for Contribution](#7-areas-open-for-contribution)
 
@@ -147,7 +153,50 @@ There are no automated tests yet. If you are adding a testable unit (e.g. a pure
 
 ---
 
-## 6. Submitting a Pull Request
+## 6. Building Standalone Executables
+
+coralX can be packaged as a standalone app (no Python required) using **PyInstaller**.
+
+### Build locally
+
+```bash
+pip install pyinstaller
+pyinstaller coralx.spec --noconfirm
+```
+
+Output:
+- `dist/coralX/` — folder with the executable and all dependencies
+- Run with `dist/coralX/coralX` (Linux/macOS) or `dist\coralX\coralX.exe` (Windows)
+
+### Automated builds via GitHub Actions
+
+Pushing a version tag triggers the build workflow across all three platforms:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub Actions will:
+1. Build on **Windows**, **macOS**, and **Linux** in parallel
+2. Package each into a zip / tar.gz
+3. Create a **GitHub Release** with all three downloads attached
+
+You can also trigger a build manually from the **Actions** tab → **Build** → **Run workflow**.
+
+### Notes on AI auto-label
+
+`ultralytics` (PyTorch) is excluded from the bundle because it is very large (~500 MB with dependencies). Users who want AI auto-label need to install it separately:
+
+```bash
+pip install ultralytics>=8.0.0
+```
+
+This is noted in the auto-generated release notes.
+
+---
+
+## 7. Submitting a Pull Request
 
 1. **Fork** the repo and create a branch from `master`:
    ```bash
@@ -175,7 +224,7 @@ Focus on motivation and context, not what lines changed.
 
 ---
 
-## 7. Areas Open for Contribution
+## 8. Areas Open for Contribution
 
 The following items are on the roadmap and would be welcome contributions:
 
