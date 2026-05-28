@@ -14,6 +14,7 @@ import os
 
 from src.ui.image_canvas import ImageCanvas
 from src.ui.calibration_dialog import CalibrationDialog
+from src.ui.ai_label_dialog import AILabelDialog, AIProgressDialog
 from src.ui.import_dialogs import (
     ImportResultDialog, CoralCodesMergeDialog,
     StationMergeDialog, CpceImportDialog,
@@ -21,6 +22,7 @@ from src.ui.import_dialogs import (
 from src.models.project import Project, ImageAnnotation, Station
 from src.core.point_generator import generate_points
 from src.core.statistics import project_summary
+from src.core.ai_labeler import AILabelWorker, LabelResult
 from src.core.analysis import photo_area
 from src.core.exporter import export_csv, export_excel, export_coral_codes
 from src.core.importer import (
@@ -270,6 +272,7 @@ class MainWindow(QMainWindow):
         self.project: Project | None = None
         self._syncing: bool = False
         self._thumbnail_loader: ThumbnailLoader | None = None
+        self._ai_worker: AILabelWorker | None = None
 
         self._build_ui()
         self._build_menu()
@@ -311,6 +314,8 @@ class MainWindow(QMainWindow):
         image_menu.addSeparator()
         image_menu.addAction("Generate Points (This Image)", self._generate_points_current)
         image_menu.addAction("Generate Points (All Images)", self._generate_points_all)
+        image_menu.addSeparator()
+        image_menu.addAction("AI Auto-Label…", self._ai_auto_label)
 
         view_menu = menubar.addMenu("&View")
         view_menu.addAction("Zoom In", "Ctrl++", self.canvas.zoom_in)
@@ -335,6 +340,8 @@ class MainWindow(QMainWindow):
         tb.addAction("⊡ Fit", self.canvas.zoom_fit)
         tb.addSeparator()
         tb.addAction("📏 Calibrate", self._calibrate_scale)
+        tb.addSeparator()
+        tb.addAction("🤖 AI Label", self._ai_auto_label)
         tb.addSeparator()
         tb.addAction("📊 Stats", self._show_stats)
         tb.addAction("💾 Export Excel", self._export_excel)
@@ -1580,3 +1587,98 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, msg: str):
         self.statusBar().showMessage(msg)
+
+    # ---------------------------------------------------------------- AI label
+
+    def _ai_auto_label(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "AI Auto-Label", "Open or create a project first.")
+            return
+
+        if self._ai_worker is not None and self._ai_worker.isRunning():
+            QMessageBox.information(self, "AI Auto-Label", "Inference is already running.")
+            return
+
+        dlg = AILabelDialog(self.project, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        scope = dlg.scope()
+        if scope == "image":
+            ann = self._current_annotation()
+            if ann is None:
+                QMessageBox.warning(self, "AI Auto-Label", "No image selected.")
+                return
+            annotations = [ann]
+        elif scope == "station":
+            station = self._current_station()
+            if station is None:
+                QMessageBox.warning(self, "AI Auto-Label", "No station selected.")
+                return
+            annotations = list(station.annotations)
+        else:
+            annotations = list(self.project.annotations)
+
+        annotations = [a for a in annotations if a.points]
+        if not annotations:
+            QMessageBox.information(self, "AI Auto-Label", "No points found in the selected scope.")
+            return
+
+        overwrite = dlg.overwrite_labeled()
+        total_points = sum(
+            len([p for p in a.points if overwrite or p.label is None])
+            for a in annotations
+        )
+        if total_points == 0:
+            QMessageBox.information(
+                self, "AI Auto-Label",
+                "All points are already labeled.\n"
+                "Uncheck 'Label only unlabeled points' to re-label all.",
+            )
+            return
+
+        progress_dlg = AIProgressDialog(total_points, self)
+        worker = AILabelWorker(
+            labeler=dlg.labeler,
+            annotations=annotations,
+            class_mapping=dlg.class_mapping(),
+            conf_threshold=dlg.conf_threshold(),
+            crop_size=dlg.crop_size(),
+            overwrite_labeled=overwrite,
+            parent=self,
+        )
+        self._ai_worker = worker
+
+        worker.progress.connect(progress_dlg.on_progress)
+        worker.error.connect(progress_dlg.on_error)
+        worker.result_ready.connect(self._on_ai_results_ready)
+        worker.finished.connect(progress_dlg.on_finished)
+        worker.finished.connect(worker.deleteLater)
+        progress_dlg.cancel_requested.connect(worker.cancel)
+
+        worker.start()
+        progress_dlg.exec()
+        self._ai_worker = None
+
+    def _on_ai_results_ready(self, results: list) -> None:
+        label_map: dict[str, dict[int, str]] = {}
+        for r in results:
+            if r.mapped_code is not None:
+                label_map.setdefault(r.annotation_path, {})[r.point_index] = r.mapped_code
+
+        labeled_count = 0
+        for ann in self.project.annotations:
+            point_updates = label_map.get(ann.image_path, {})
+            for p in ann.points:
+                if p.index in point_updates:
+                    p.label = point_updates[p.index]
+                    labeled_count += 1
+
+        current_ann = self._current_annotation()
+        if current_ann:
+            self._reload_canvas_ann(current_ann)
+        self._update_progress(current_ann)
+        self._update_quick_stats()
+        self._refresh_codes_panel()
+        self._refresh_image_tree()
+        self._set_status(f"AI auto-label complete: {labeled_count} point(s) labeled.")
