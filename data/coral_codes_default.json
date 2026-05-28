@@ -32,8 +32,7 @@
     "TWS": "Tape, Wand, Shadow"
   },
   "groups": [
-    {"name": "Acropora",          "codes": ["ACB", "ACE", "ACS", "ACD", "ACT"]},
-    {"name": "Hard Coral",        "codes": ["CB", "CE", "CF", "CM", "CS", "CMR", "CHL", "CME", "CTU"]},
+    {"name": "Hard Coral",        "codes": ["ACB", "ACE", "ACS", "ACD", "ACT", "CB", "CE", "CF", "CM", "CS", "CMR", "CHL", "CME", "CTU"]},
     {"name": "Dead Coral",        "codes": ["DC", "DCA"]},
     {"name": "Soft Coral & Biota","codes": ["SC", "SP", "ZO", "OT"]},
     {"name": "Algae",             "codes": ["AA", "CA", "HA", "MA", "TA"]},
