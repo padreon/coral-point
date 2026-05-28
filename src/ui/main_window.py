@@ -7,11 +7,12 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QAbstractItemDelegate, QCompleter, QScrollArea,
     QMenu, QCheckBox, QTextEdit, QTabWidget,
 )
-from PyQt6.QtCore import Qt, QThread, QSize, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QThread, QSize, pyqtSignal, QTimer, QUrl
 from typing import Callable
-from PyQt6.QtGui import QIcon, QImage, QPixmap
+from PyQt6.QtGui import QIcon, QImage, QPixmap, QDesktopServices
 import os
 
+from src.core.logger import get_logger, log_path
 from src.ui.image_canvas import ImageCanvas
 from src.ui.calibration_dialog import CalibrationDialog
 from src.ui.ai_label_dialog import AILabelDialog, AIProgressDialog
@@ -269,6 +270,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("coralX — Coral Point Count")
         self.setMinimumSize(1100, 720)
 
+        self._log = get_logger("coralX.ui")
         self.project: Project | None = None
         self._syncing: bool = False
         self._thumbnail_loader: ThumbnailLoader | None = None
@@ -323,6 +325,8 @@ class MainWindow(QMainWindow):
         view_menu.addAction("Fit to Window", "Ctrl+0", self.canvas.zoom_fit)
 
         help_menu = menubar.addMenu("&Help")
+        help_menu.addAction("Open Log File…", self._open_log_file)
+        help_menu.addSeparator()
         help_menu.addAction("About", self._show_about)
 
     def _build_toolbar(self):
@@ -639,11 +643,17 @@ class MainWindow(QMainWindow):
     def _open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "coralX (*.cpce)")
         if path:
-            self.project = Project.load(path)
+            try:
+                self.project = Project.load(path)
+            except Exception as exc:
+                self._log.exception("Failed to open project: %s", path)
+                QMessageBox.critical(self, "Open Failed", f"Could not open project:\n{exc}")
+                return
             self._refresh_image_tree()
             self._refresh_codes_panel()
             self._label_delegate.update_codes(self.project.coral_codes)
             self.setWindowTitle(f"coralX — {self.project.name}")
+            self._log.info("Opened project: %s", path)
             self._set_status(f"Opened: {path}")
 
     def _save_project(self):
@@ -651,9 +661,17 @@ class MainWindow(QMainWindow):
             return
         path = self.project.save_path
         if not path:
-            path, _ = QFileDialog.getSaveFileName(self, "Save Project", self.project.name, "coralX (*.cpce)")
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save Project", self.project.name, "coralX (*.cpce)"
+            )
         if path:
-            self.project.save(path)
+            try:
+                self.project.save(path)
+            except Exception as exc:
+                self._log.exception("Failed to save project: %s", path)
+                QMessageBox.critical(self, "Save Failed", f"Could not save project:\n{exc}")
+                return
+            self._log.info("Saved project: %s", path)
             self._set_status(f"Saved: {path}")
 
     def _add_images(self):
@@ -1135,6 +1153,16 @@ class MainWindow(QMainWindow):
             self.project.coral_groups = dlg.get_groups()
             self._refresh_codes_panel()
 
+    def _open_log_file(self) -> None:
+        path = log_path()
+        if not path.exists():
+            QMessageBox.information(
+                self, "Log File",
+                f"No log file yet.\n\nIt will be created at:\n{path}",
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
     def _show_about(self):
         QMessageBox.about(self, "coralX",
             "coralX — Coral Point Count\n\n"
@@ -1302,6 +1330,8 @@ class MainWindow(QMainWindow):
         img = cv2.imread(ann.image_path)
         if img is not None:
             ann.image_height, ann.image_width = img.shape[:2]
+        else:
+            self._log.warning("Could not read image file: %s", ann.image_path)
 
         if self.project.border_rect:
             self.canvas.set_border_rect(tuple(self.project.border_rect))

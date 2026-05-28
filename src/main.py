@@ -8,18 +8,29 @@ if sys.platform.startswith("linux"):
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
+from src.core.logger import get_logger, install_excepthook, install_qt_message_handler, setup_logging
 from src.ui.main_window import MainWindow
 
 
 def main():
+    setup_logging()
+    install_excepthook()
+    log = get_logger("coralX.main")
+
     app = QApplication(sys.argv)
     app.setApplicationName("coralX")
     app.setOrganizationName("coralX")
+    install_qt_message_handler()
+
+    log.info("coralX starting (Python %s)", sys.version.split()[0])
+
     font = QFont("Segoe UI", 10)
     app.setFont(font)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    log.info("coralX exiting (code %d)", exit_code)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
