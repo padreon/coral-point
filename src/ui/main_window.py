@@ -1667,9 +1667,17 @@ class MainWindow(QMainWindow):
             )
             return
 
+        labeler = dlg.labeler
+        if labeler is None:
+            QMessageBox.warning(
+                self, "AI Auto-Label",
+                "No model loaded. Please click 'Load Model & Detect Classes' before running.",
+            )
+            return
+
         progress_dlg = AIProgressDialog(total_points, self)
         worker = AILabelWorker(
-            labeler=dlg.labeler,
+            labeler=labeler,
             annotations=annotations,
             class_mapping=dlg.class_mapping(),
             conf_threshold=dlg.conf_threshold(),
