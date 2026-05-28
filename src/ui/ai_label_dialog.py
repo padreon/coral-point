@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QDoubleSpinBox, QSpinBox, QRadioButton,
     QCheckBox, QTableWidget, QTableWidgetItem, QComboBox, QLabel,
     QProgressBar, QTextEdit, QDialogButtonBox, QMessageBox, QFileDialog,
-    QWidget,
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 
@@ -47,8 +46,8 @@ class ClassMappingTable(QTableWidget):
         result: dict[str, str | None] = {}
         for row in range(self.rowCount()):
             cls_name = self.item(row, 0).text()
-            combo = self.cellWidget(row, 1)
-            value = combo.currentText() if combo else "(skip)"
+            widget = self.cellWidget(row, 1)
+            value = widget.currentText() if isinstance(widget, QComboBox) else "(skip)"
             result[cls_name] = None if value == "(skip)" else value
         return result
 
@@ -163,7 +162,9 @@ class AILabelDialog(QDialog):
 
         try:
             labeler = AILabeler(path)
-            suggestions = AILabeler.suggest_mapping(labeler.class_names(), self._project.coral_codes)
+            suggestions = AILabeler.suggest_mapping(
+                labeler.class_names(), self._project.coral_codes
+            )
             self._mapping_table.populate(suggestions)
             self._labeler = labeler
             self._run_btn.setEnabled(True)
@@ -176,7 +177,8 @@ class AILabelDialog(QDialog):
         settings.setValue(_SETTINGS_KEY_CONF, self._conf_spin.value())
         settings.setValue(_SETTINGS_KEY_CROP, self._crop_spin.value())
         settings.setValue(_SETTINGS_KEY_SCOPE, self.scope())
-        settings.setValue(_SETTINGS_KEY_OVERWRITE, "true" if self._overwrite_cb.isChecked() else "false")
+        overwrite_val = "true" if self._overwrite_cb.isChecked() else "false"
+        settings.setValue(_SETTINGS_KEY_OVERWRITE, overwrite_val)
         super().accept()
 
     # --- Public properties ---
@@ -251,7 +253,7 @@ class AIProgressDialog(QDialog):
         else:
             self.accept()
 
-    def on_progress(self, done: int, total: int, status: str) -> None:
+    def on_progress(self, done: int, _total: int, status: str) -> None:
         self._progress_bar.setValue(done)
         self._status_label.setText(status)
         self._log.append(f"  {status}")

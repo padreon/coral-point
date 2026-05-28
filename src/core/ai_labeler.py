@@ -38,6 +38,27 @@ class AILabeler:
     def class_names(self) -> list[str]:
         return list(self._class_names.values())
 
+    def _crop_around(
+        self, image: np.ndarray, x: float, y: float, crop_size: int
+    ) -> np.ndarray:
+        half = crop_size // 2
+        h, w = image.shape[:2]
+        cx = min(max(int(x), 0), w - 1)
+        cy = min(max(int(y), 0), h - 1)
+        x0, x1 = max(0, cx - half), min(w, cx + half)
+        y0, y1 = max(0, cy - half), min(h, cy + half)
+        crop = image[y0:y1, x0:x1]
+        pad_t = max(0, half - cy)
+        pad_b = max(0, cy + half - h)
+        pad_l = max(0, half - cx)
+        pad_r = max(0, cx + half - w)
+        if pad_t or pad_b or pad_l or pad_r:
+            crop = cv2.copyMakeBorder(  # type: ignore[call-overload]
+                crop, int(pad_t), int(pad_b), int(pad_l), int(pad_r),
+                cv2.BORDER_CONSTANT, value=0,
+            )
+        return crop
+
     def predict_point(
         self,
         image: np.ndarray,
@@ -45,27 +66,7 @@ class AILabeler:
         y: float,
         crop_size: int = 64,
     ) -> tuple[str, float]:
-        half = crop_size // 2
-        h, w = image.shape[:2]
-
-        x0 = max(0, int(x) - half)
-        y0 = max(0, int(y) - half)
-        x1 = min(w, int(x) + half)
-        y1 = min(h, int(y) + half)
-
-        crop = image[y0:y1, x0:x1]
-
-        pad_top = max(0, half - int(y))
-        pad_bottom = max(0, int(y) + half - h)
-        pad_left = max(0, half - int(x))
-        pad_right = max(0, int(x) + half - w)
-
-        if pad_top or pad_bottom or pad_left or pad_right:
-            crop = cv2.copyMakeBorder(
-                crop, pad_top, pad_bottom, pad_left, pad_right,
-                cv2.BORDER_CONSTANT, value=0,
-            )
-
+        crop = self._crop_around(image, x, y, crop_size)
         results = self._model(crop, verbose=False)
         probs = results[0].probs
         if probs is None:
@@ -73,7 +74,6 @@ class AILabeler:
                 "Model does not appear to be a classification model. "
                 "Train with `yolo task=classify`."
             )
-
         class_name = self._class_names[int(probs.top1)]
         confidence = float(probs.top1conf)
         return class_name, confidence
@@ -158,29 +158,31 @@ class AILabelWorker(QThread):
                     if not self._overwrite_labeled and p.label is not None:
                         continue
 
-                    predicted_class, confidence = self._labeler.predict_point(
-                        current_img, p.x, p.y, self._crop_size
-                    )
-
-                    mapped_code: str | None = self._class_mapping.get(predicted_class)
-                    if confidence < self._conf_threshold:
-                        mapped_code = None
-
-                    results.append(LabelResult(
-                        annotation_path=ann.image_path,
-                        point_index=p.index,
-                        predicted_class=predicted_class,
-                        mapped_code=mapped_code,
-                        confidence=confidence,
-                    ))
+                    try:
+                        predicted_class, confidence = self._labeler.predict_point(
+                            current_img, p.x, p.y, self._crop_size
+                        )
+                        mapped_code: str | None = self._class_mapping.get(predicted_class)
+                        if confidence < self._conf_threshold:
+                            mapped_code = None
+                        results.append(LabelResult(
+                            annotation_path=ann.image_path,
+                            point_index=p.index,
+                            predicted_class=predicted_class,
+                            mapped_code=mapped_code,
+                            confidence=confidence,
+                        ))
+                        point_status = (
+                            f"{img_name} — Point #{p.index + 1}: "
+                            f"{predicted_class} → {mapped_code or '(skip)'} "
+                            f"({confidence:.1%})"
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        self.error.emit(f"{img_name} — Point #{p.index + 1}: {exc}")
+                        point_status = f"{img_name} — Point #{p.index + 1}: (error)"
 
                     done += 1
-                    self.progress.emit(
-                        done, total,
-                        f"{img_name} — Point #{p.index + 1}: "
-                        f"{predicted_class} → {mapped_code or '(skip)'} "
-                        f"({confidence:.1%})",
-                    )
+                    self.progress.emit(done, total, point_status)
 
         except Exception as exc:
             self.error.emit(str(exc))

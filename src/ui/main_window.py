@@ -22,7 +22,7 @@ from src.ui.import_dialogs import (
 from src.models.project import Project, ImageAnnotation, Station
 from src.core.point_generator import generate_points
 from src.core.statistics import project_summary
-from src.core.ai_labeler import AILabelWorker, LabelResult
+from src.core.ai_labeler import AILabelWorker
 from src.core.analysis import photo_area
 from src.core.exporter import export_csv, export_excel, export_coral_codes
 from src.core.importer import (
@@ -1653,12 +1653,15 @@ class MainWindow(QMainWindow):
         worker.error.connect(progress_dlg.on_error)
         worker.result_ready.connect(self._on_ai_results_ready)
         worker.finished.connect(progress_dlg.on_finished)
+        worker.finished.connect(self._clear_ai_worker)
         worker.finished.connect(worker.deleteLater)
         progress_dlg.cancel_requested.connect(worker.cancel)
 
         worker.start()
         progress_dlg.exec()
-        self._ai_worker = None
+        # _ai_worker is cleared by _clear_ai_worker when finished fires.
+        # If the dialog is closed before the worker finishes, the guard stays
+        # set until the thread completes, preventing concurrent runs.
 
     def _on_ai_results_ready(self, results: list) -> None:
         label_map: dict[str, dict[int, str]] = {}
@@ -1682,3 +1685,6 @@ class MainWindow(QMainWindow):
         self._refresh_codes_panel()
         self._refresh_image_tree()
         self._set_status(f"AI auto-label complete: {labeled_count} point(s) labeled.")
+
+    def _clear_ai_worker(self) -> None:
+        self._ai_worker = None
