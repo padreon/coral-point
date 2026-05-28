@@ -3,54 +3,63 @@ name: Build
 on:
   push:
     tags:
-      - "v*"          # trigger on version tags: v1.0.0, v1.2.3, etc.
-  workflow_dispatch:  # allow manual trigger from GitHub Actions tab
+      - "v*"
+  workflow_dispatch:
 
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            artifact: coralX.exe
-            dist_path: dist/coralX/coralX.exe
-
           - os: macos-latest
-            artifact: coralX-mac.zip
-            dist_path: dist/coralX.app
-
           - os: ubuntu-latest
-            artifact: coralX-linux.tar.gz
-            dist_path: dist/coralX
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
+      # Strip leading 'v' from tag (v1.2.3 → 1.2.3); default to 0.0.0-dev
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=0.0.0-dev" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
+      # ── System tools ───────────────────────────────────────────────────
       - name: Install UPX (Windows)
         if: runner.os == 'Windows'
         run: choco install upx --yes
 
-      - name: Install UPX (macOS)
+      - name: Install UPX + create-dmg (macOS)
         if: runner.os == 'macOS'
-        run: brew install upx
+        run: brew install upx create-dmg
 
-      - name: Install UPX (Linux)
+      - name: Install UPX + FUSE (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y upx-ucl
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y upx-ucl libfuse2
 
+      # ── Python dependencies ────────────────────────────────────────────
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
           pip uninstall -y torch torchvision torchaudio ultralytics || true
 
+      # ── Icons ──────────────────────────────────────────────────────────
       - name: Generate icons
         run: python assets/generate_icons.py
 
@@ -59,7 +68,8 @@ jobs:
         run: |
           mkdir -p assets/icon.iconset
           for size in 16 32 64 128 256 512; do
-            sips -z $size $size assets/icon_${size}.png --out assets/icon.iconset/icon_${size}x${size}.png
+            sips -z $size $size assets/icon_${size}.png \
+              --out assets/icon.iconset/icon_${size}x${size}.png
           done
           sips -z 32  32  assets/icon_16.png  --out assets/icon.iconset/icon_16x16@2x.png
           sips -z 64  64  assets/icon_32.png  --out assets/icon.iconset/icon_32x32@2x.png
@@ -67,6 +77,7 @@ jobs:
           sips -z 512 512 assets/icon_256.png --out assets/icon.iconset/icon_256x256@2x.png
           iconutil -c icns assets/icon.iconset -o assets/icon.icns
 
+      # ── PyInstaller ────────────────────────────────────────────────────
       - name: Build with PyInstaller
         run: pyinstaller coralx.spec --noconfirm
 
@@ -74,35 +85,73 @@ jobs:
         shell: bash
         run: du -sh dist/coralX* 2>/dev/null || true
 
-      # ── Windows: zip the dist folder ──────────────────────────────────
-      - name: Package (Windows)
+      # ── Windows: Inno Setup installer (.exe) ───────────────────────────
+      - name: Create installer (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist\coralX -DestinationPath coralX-windows.zip
+        run: |
+          iscc /DAppVersion="${{ steps.version.outputs.version }}" installer\windows.iss
 
-      # ── macOS: zip the .app bundle ─────────────────────────────────────
-      - name: Package (macOS)
+      # ── macOS: DMG with drag-to-Applications ───────────────────────────
+      - name: Create DMG (macOS)
         if: runner.os == 'macOS'
-        run: zip -r coralX-mac.zip dist/coralX.app
+        run: |
+          create-dmg \
+            --volname "coralX" \
+            --volicon "assets/icon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "coralX.app" 175 190 \
+            --hide-extension "coralX.app" \
+            --app-drop-link 425 190 \
+            "coralX-mac.dmg" \
+            "dist/"
 
-      # ── Linux: tar.gz the dist folder ─────────────────────────────────
-      - name: Package (Linux)
+      # ── Linux: AppImage ────────────────────────────────────────────────
+      - name: Create AppImage (Linux)
         if: runner.os == 'Linux'
-        run: tar -czvf coralX-linux.tar.gz -C dist coralX
+        run: |
+          wget -q -O appimagetool.AppImage \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool.AppImage
 
-      # ── Upload artifact for this run ───────────────────────────────────
-      - name: Upload build artifact
+          mkdir -p AppDir
+          cp -r dist/coralX/. AppDir/
+          cp installer/AppRun AppDir/AppRun
+          chmod +x AppDir/AppRun
+          cp installer/coralx.desktop AppDir/
+          cp assets/icon_256.png AppDir/coralX.png
+
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 \
+            ./appimagetool.AppImage AppDir coralX-linux.AppImage
+
+      # ── Upload artifacts ───────────────────────────────────────────────
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: |
-            coralX-windows.zip
-            coralX-mac.zip
-            coralX-linux.tar.gz
-          if-no-files-found: ignore
+          name: coralX-windows-setup.exe
+          path: coralX-windows-setup.exe
           retention-days: 7
 
-  # ── Create GitHub Release when triggered by a tag ─────────────────────
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coralX-mac.dmg
+          path: coralX-mac.dmg
+          retention-days: 7
+
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coralX-linux.AppImage
+          path: coralX-linux.AppImage
+          retention-days: 7
+
+  # ── GitHub Release (tag-triggered only) ─────────────────────────────────
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -127,16 +176,16 @@ jobs:
 
             ### Download
 
-            | Platform | File |
-            |---|---|
-            | Windows | `coralX-windows.zip` → extract → run `coralX.exe` |
-            | macOS | `coralX-mac.zip` → extract → open `coralX.app` |
-            | Linux | `coralX-linux.tar.gz` → extract → run `./coralX` |
+            | Platform | File | How to install |
+            |---|---|---|
+            | Windows | `coralX-windows-setup.exe` | Run installer → follow wizard → launch from Start Menu |
+            | macOS | `coralX-mac.dmg` | Open DMG → drag coralX to Applications |
+            | Linux | `coralX-linux.AppImage` | `chmod +x coralX-linux.AppImage` → double-click or run directly |
 
-            ### Notes
-            - No Python installation required
-            - AI auto-label requires installing ultralytics separately:
-              `pip install ultralytics>=8.0.0`
+            > **macOS:** First launch may require right-clicking → Open to bypass Gatekeeper (app is unsigned).
+            >
+            > **AI auto-label** is not bundled to keep the download small.
+            > To enable it after installing: `pip install ultralytics>=8.0.0`
           files: artifacts/*
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
