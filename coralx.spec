@@ -26,6 +26,14 @@ block_cipher = None
 # ---------------------------------------------------------------------------
 # Qt modules coralX does NOT use — excluding these cuts ~150–200 MB
 # ---------------------------------------------------------------------------
+_EXCLUDED_TORCH = [
+    # PyTorch native DLLs — excluded because ultralytics/torch are optional
+    # and UPX compression corrupts them, causing WinError 1114 at runtime.
+    "c10", "torch", "libtorch", "fbgemm", "asmjit",
+    "torch_cpu", "torch_cuda", "torch_python",
+    "caffe2", "shm", "libgomp",
+]
+
 _EXCLUDED_QT = [
     "Qt6WebEngine", "Qt6WebEngineCore", "Qt6WebEngineWidgets",
     "Qt6WebEngineQuick", "Qt6WebView",
@@ -104,7 +112,10 @@ a = Analysis(
 # ---------------------------------------------------------------------------
 def _should_exclude(name: str) -> bool:
     name_lower = name.lower()
-    return any(excl.lower() in name_lower for excl in _EXCLUDED_QT)
+    return (
+        any(excl.lower() in name_lower for excl in _EXCLUDED_QT)
+        or any(excl.lower() in name_lower for excl in _EXCLUDED_TORCH)
+    )
 
 a.binaries = [
     (name, path, typecode)
@@ -139,7 +150,7 @@ coll = COLLECT(
     a.datas,
     strip=sys.platform != "win32",
     upx=True,
-    upx_exclude=["vcruntime140.dll", "python3*.dll"],
+    upx_exclude=["vcruntime140.dll", "python3*.dll", "c10.dll", "torch*.dll", "fbgemm.dll"],
     name="coralX",
 )
 

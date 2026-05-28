@@ -49,6 +49,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
+          pip uninstall -y torch torchvision torchaudio ultralytics || true
 
       - name: Generate icons
         run: python assets/generate_icons.py
