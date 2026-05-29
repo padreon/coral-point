@@ -67,8 +67,8 @@ def export_excel(project: Project, output_path: str) -> str:
             {
                 "Code": label,
                 "Coverage (%)": info["pct"],
-                "95% CI Lower (%)": info["ci_lower"],
-                "95% CI Upper (%)": info["ci_upper"],
+                "95% Confidence Interval Lower (%)": info["ci_lower"],
+                "95% Confidence Interval Upper (%)": info["ci_upper"],
             }
             for label, info in summary.get("coverage_ci", {}).items()
         ]
