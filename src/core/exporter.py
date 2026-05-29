@@ -44,30 +44,39 @@ def export_excel(project: Project, output_path: str) -> str:
                     "category": p.category or "",
                 })
 
-    # Summary sheet
+    # Summary sheet — 4 columns: Metric / Value / CI Lower / CI Upper
+    # Coverage rows use the CI columns; other rows leave them blank.
+    _col = {"Metric": "", "Value": "", "95% CI Lower (%)": "", "95% CI Upper (%)": ""}
+
+    def _row(metric: str, value: object, ci_lower: object = "", ci_upper: object = "") -> dict:
+        return {"Metric": metric, "Value": value,
+                "95% CI Lower (%)": ci_lower, "95% CI Upper (%)": ci_upper}
+
     summary_rows: list[dict] = []
     if summary:
         summary_rows += [
-            {"metric": "Total points",             "value": summary["total_points"]},
-            {"metric": "Labeled points",           "value": summary["labeled_points"]},
-            {"metric": "",                          "value": ""},
-            {"metric": "Species richness (S)",     "value": summary.get("species_richness", "")},
-            {"metric": "Shannon diversity (H')",   "value": summary.get("shannon_diversity", "")},
-            {"metric": "Simpson diversity (1-D)",  "value": summary.get("simpson_diversity", "")},
-            {"metric": "Pielou evenness (J')",     "value": summary.get("pielou_evenness", "")},
-            {"metric": "Margalef richness (d)",    "value": summary.get("margalef_richness", "")},
-            {"metric": "Fisher alpha (α)",         "value": summary.get("fisher_alpha", "")},
-            {"metric": "",                          "value": ""},
+            _row("Total points",            summary["total_points"]),
+            _row("Labeled points",          summary["labeled_points"]),
+            _row(""),
+            _row("Species richness (S)",    summary.get("species_richness", "")),
+            _row("Shannon diversity (H')",  summary.get("shannon_diversity", "")),
+            _row("Simpson diversity (1-D)", summary.get("simpson_diversity", "")),
+            _row("Pielou evenness (J')",    summary.get("pielou_evenness", "")),
+            _row("Margalef richness (d)",   summary.get("margalef_richness", "")),
+            _row("Fisher alpha (α)",        summary.get("fisher_alpha", "")),
+            _row(""),
         ]
         for label, info in summary.get("coverage_ci", {}).items():
-            summary_rows.append({
-                "metric": f"Coverage — {label}",
-                "value": f"{info['pct']}%  (95% CI: {info['ci_lower']}%–{info['ci_upper']}%)",
-            })
+            summary_rows.append(_row(
+                f"Coverage — {label}",
+                info["pct"],
+                info["ci_lower"],
+                info["ci_upper"],
+            ))
         if summary.get("group_coverage"):
-            summary_rows.append({"metric": "", "value": ""})
+            summary_rows.append(_row(""))
             for grp, pct in summary["group_coverage"].items():
-                summary_rows.append({"metric": f"Group — {grp}", "value": f"{pct}%"})
+                summary_rows.append(_row(f"Group — {grp}", pct))
 
     # Group coverage sheet: one row per station + project total
     grp_rows: list[dict] = []
