@@ -203,11 +203,23 @@ class ImageCanvas(QWidget):
             t.translate(-self._pixmap.width() / 2, -self._pixmap.height() / 2)
         return t
 
+    def _adaptive_point_r(self) -> float:
+        """Screen-space radius that shrinks when points are dense to prevent overlap."""
+        r = float(POINT_RADIUS)
+        ann = self._annotation
+        if ann and len(ann.points) > 1 and self._pixmap:
+            area = self._pixmap.width() * self._pixmap.height()
+            avg_spacing_screen = (area / len(ann.points)) ** 0.5 * self._zoom
+            r = min(r, max(2.5, avg_spacing_screen * 0.38))
+        return r
+
     def _draw_points(self, painter: QPainter):
         assert self._annotation is not None
-        # Divide by zoom so the drawn size in image-space maps to a constant screen-space size.
-        r = POINT_RADIUS / self._zoom
-        font_size = max(1, round(LABEL_FONT_SIZE / self._zoom))
+        r_screen = self._adaptive_point_r()
+        r = r_screen / self._zoom          # image-space radius
+        show_label = r_screen >= 6         # hide text when points are very small
+
+        font_size = max(1, round(r_screen * 1.1 / self._zoom))
         font = QFont("Arial", font_size)
         font.setBold(True)
         painter.setFont(font)
@@ -224,9 +236,13 @@ class ImageCanvas(QWidget):
                 int(r * 2), int(r * 2)
             )
 
-            if p.label:
+            if p.label and show_label:
                 painter.setPen(QPen(QColor(0, 0, 0)))
-                painter.drawText(int(p.x + r + 2 / self._zoom), int(p.y + 4 / self._zoom), p.label[:6])
+                painter.drawText(
+                    int(p.x + r + 2 / self._zoom),
+                    int(p.y + 4 / self._zoom),
+                    p.label[:6],
+                )
 
     # ------------------------------------------------------------------ events
 
@@ -413,7 +429,7 @@ class ImageCanvas(QWidget):
     def _hit_point(self, img_pos: QPoint) -> Point | None:
         if not self._annotation:
             return None
-        threshold = POINT_RADIUS / self._zoom + 4
+        threshold = self._adaptive_point_r() / self._zoom + 2
         for p in self._annotation.points:
             if abs(p.x - img_pos.x()) <= threshold and abs(p.y - img_pos.y()) <= threshold:
                 return p
