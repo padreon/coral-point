@@ -16,7 +16,11 @@ def export_csv(project: Project, output_path: str) -> str:
     return output_path
 
 
-def export_excel(project: Project, output_path: str) -> str:
+def export_excel(
+    project: Project,
+    output_path: str,
+    progress_cb=None,
+) -> str:
     """
     Export to Excel with sheets:
     - Summary: overall project statistics including extended diversity indices
@@ -25,10 +29,23 @@ def export_excel(project: Project, output_path: str) -> str:
     - Per Image: coverage per image with 95% CI columns
     - Cover Area: photo area and per-code area (only when calibrated)
     - Raw Points: every labeled point
+
+    Optional progress_cb(done, total, msg) is called at each stage.
     """
+    def _cb(done: int, total: int, msg: str) -> None:
+        if progress_cb:
+            progress_cb(done, total, msg)
+
+    # Stage weights: stats(1) + sheets(9) + charts(7) + embed(1) = 18 steps
+    TOTAL = 18
+    step = 0
+
+    _cb(step, TOTAL, "Menghitung statistik…")
     summary = project_summary(project)
     per_station = per_station_table(project)
     per_image = per_image_table(project)
+    step += 1
+    _cb(step, TOTAL, "Menyiapkan data…")
 
     # Raw points (with station column)
     raw_rows = []
@@ -128,11 +145,12 @@ def export_excel(project: Project, output_path: str) -> str:
     stats_rows = _coverage_statistics(project)
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        # Summary: write three sub-tables with a blank row between each
+        # Summary
+        step += 1; _cb(step, TOTAL, "Menulis sheet Summary…")
         row_cursor = 0
         pd.DataFrame(s1_rows).to_excel(
             writer, sheet_name="Summary", index=False, startrow=row_cursor)
-        row_cursor += len(s1_rows) + 2  # header + data + blank separator
+        row_cursor += len(s1_rows) + 2
         if cov_rows:
             pd.DataFrame(cov_rows).to_excel(
                 writer, sheet_name="Summary", index=False, startrow=row_cursor)
@@ -140,41 +158,102 @@ def export_excel(project: Project, output_path: str) -> str:
         if grp_rows:
             pd.DataFrame(grp_rows).to_excel(
                 writer, sheet_name="Summary", index=False, startrow=row_cursor)
+
+        step += 1; _cb(step, TOTAL, "Menulis sheet Group Coverage…")
         pd.DataFrame(grp_sheet_rows).fillna(0).to_excel(writer, sheet_name="Group Coverage", index=False)
+
+        step += 1; _cb(step, TOTAL, "Menulis sheet Per Station…")
         pd.DataFrame(per_station).fillna(0).to_excel(writer, sheet_name="Per Station", index=False)
+
+        step += 1; _cb(step, TOTAL, f"Menulis sheet Per Image ({len(per_image)} gambar)…")
         pd.DataFrame(per_image).fillna(0).to_excel(writer, sheet_name="Per Image", index=False)
+
+        step += 1; _cb(step, TOTAL, "Menulis sheet Statistics…")
         pd.DataFrame(stats_rows).to_excel(writer, sheet_name="Statistics", index=False)
+
         if cover_rows:
+            step += 1; _cb(step, TOTAL, "Menulis sheet Cover Area…")
             pd.DataFrame(cover_rows).fillna(0).to_excel(writer, sheet_name="Cover Area", index=False)
+        else:
+            step += 1
+
+        step += 1; _cb(step, TOTAL, f"Menulis sheet Raw Points ({len(raw_rows):,} titik)…")
         pd.DataFrame(raw_rows).to_excel(writer, sheet_name="Raw Points", index=False)
 
-        # --- Multivariate sheets (Lapis 3) ---
+        step += 1; _cb(step, TOTAL, "Menghitung analisa multivariat…")
         _write_multivariate_sheets(writer, project)
 
-        # --- Map Data sheet (Lapis 3, spatial) ---
+        step += 1; _cb(step, TOTAL, "Menulis Map Data…")
         _write_map_data_sheet(writer, project)
 
     # --- Charts: generate PNGs then embed into Excel (Fase 5) ---
+    chart_names = [
+        "Coverage bar", "Life-form pie", "Diversity bar",
+        "Mortality bar", "Reef health", "Ordination", "Dendrogram",
+    ]
     chart_dir = Path(output_path).with_suffix("").parent / (Path(output_path).stem + "_charts")
-    chart_paths = _generate_charts(project, str(chart_dir))
+    chart_paths: list[str] = []
+    try:
+        from src.core.plots import export_all_charts as _export_charts
+        # Generate charts one by one so we can report progress
+        import os
+        from src.core.statistics import project_summary as _ps, per_station_table as _pst
+        from src.core.validation import can_run_multivariate as _gate
+        from src.core.plots import (
+            plot_coverage_bar, plot_lifeform_pie, plot_diversity_bar,
+            plot_mortality_bar, plot_reef_health, plot_ordination,
+            plot_dendrogram,
+        )
+        from src.core.multivariate import (
+            composition_matrix, bray_curtis_matrix,
+            pcoa, hierarchical_clusters,
+        )
+
+        os.makedirs(str(chart_dir), exist_ok=True)
+        _sum = summary
+        _srows = per_station
+
+        def _cpath(name: str) -> str:
+            return str(chart_dir / name)
+
+        chart_fns = [
+            ("01_coverage_bar.png",  lambda: plot_coverage_bar(_sum, _cpath("01_coverage_bar.png"))),
+            ("02_lifeform_pie.png",  lambda: plot_lifeform_pie(_sum, _cpath("02_lifeform_pie.png"))),
+            ("03_diversity_bar.png", lambda: plot_diversity_bar(_srows, _cpath("03_diversity_bar.png"))),
+            ("04_mortality_bar.png", lambda: plot_mortality_bar(_srows, _cpath("04_mortality_bar.png"))),
+            ("05_reef_health.png",   lambda: plot_reef_health(_srows, _cpath("05_reef_health.png"))),
+        ]
+
+        if _gate(project).ok:
+            _sample_names, _, _matrix = composition_matrix(project)
+            _bc = bray_curtis_matrix(_matrix)
+            _pcoa_r = pcoa(_bc)
+            _link_r = hierarchical_clusters(_bc)
+            chart_fns += [
+                ("06_ordination.png",  lambda: plot_ordination(_pcoa_r, _sample_names, _cpath("06_ordination.png"))),
+                ("07_dendrogram.png",  lambda: plot_dendrogram(_link_r, _sample_names, _cpath("07_dendrogram.png"))),
+            ]
+
+        for i, (fname, fn) in enumerate(chart_fns):
+            label = fname.split("_", 1)[1].replace(".png", "").replace("_", " ").title()
+            step += 1
+            _cb(step, TOTAL, f"Membuat chart {i+1}/{len(chart_fns)}: {label}…")
+            p = fn()
+            if p:
+                chart_paths.append(p)
+
+    except ImportError:
+        step += len(chart_names)
+    except Exception:
+        step += len(chart_names)
+
     if chart_paths:
+        step += 1; _cb(step, TOTAL, f"Menyisipkan {len(chart_paths)} chart ke Excel…")
         _embed_charts_sheet(output_path, chart_paths)
 
+    _cb(TOTAL, TOTAL, "Selesai.")
+
     return output_path
-
-
-def _generate_charts(project: Project, chart_dir: str) -> list[str]:
-    """Generate PNG charts to chart_dir. Returns list of paths created.
-
-    Returns empty list silently if matplotlib is not installed.
-    """
-    try:
-        from src.core.plots import export_all_charts
-        return export_all_charts(project, chart_dir)
-    except ImportError:
-        return []
-    except Exception:
-        return []
 
 
 def _embed_charts_sheet(excel_path: str, chart_paths: list[str]) -> None:

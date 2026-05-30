@@ -15,6 +15,7 @@ from src.core.logger import get_logger, log_path
 from src.ui.image_canvas import ImageCanvas
 from src.ui.calibration_dialog import CalibrationDialog
 from src.ui.ai_label_dialog import AILabelDialog, AIProgressDialog
+from src.ui.progress_dialog import ProgressDialog, WorkerThread
 from src.ui.import_dialogs import (
     ImportResultDialog, CoralCodesMergeDialog,
     StationMergeDialog, CpceImportDialog,
@@ -808,19 +809,40 @@ class MainWindow(QMainWindow):
 
     def _open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "coralX (*.cpce)")
-        if path:
-            try:
-                self.project = Project.load(path)
-            except Exception as exc:
-                self._log.exception("Failed to open project: %s", path)
-                QMessageBox.critical(self, "Open Failed", f"Could not open project:\n{exc}")
-                return
+        if not path:
+            return
+
+        dlg = ProgressDialog("Membuka Project…", cancellable=False, parent=self)
+        dlg.set_indeterminate("Memuat file project…")
+
+        def _load(cb):
+            cb(0, 0, "Memuat file project…")
+            return Project.load(path)
+
+        def _on_done(project):
+            dlg.accept()
+            self.project = project
             self._refresh_image_tree()
             self._refresh_codes_panel()
-            self._label_delegate.update_codes(self.project.coral_codes)
-            self.setWindowTitle(f"coralX — {self.project.name}")
+            self._label_delegate.update_codes(project.coral_codes)
+            n_img = sum(len(s.annotations) for s in project.stations)
+            self.setWindowTitle(f"coralX — {project.name}")
             self._log.info("Opened project: %s", path)
-            self._set_status(f"Opened: {path}")
+            self._set_status(
+                f"Dibuka: {path}  ({len(project.stations)} stasiun, {n_img} gambar)"
+            )
+
+        def _on_error(msg):
+            dlg.accept()
+            self._log.error("Failed to open project: %s", path)
+            QMessageBox.critical(self, "Gagal Membuka", f"Tidak bisa membuka project:\n{msg}")
+
+        worker = WorkerThread(_load, parent=self)
+        worker.progress.connect(dlg.update)
+        worker.succeeded.connect(_on_done)
+        worker.failed.connect(_on_error)
+        worker.start()
+        dlg.exec()
 
     def _save_project(self):
         if not self.project:
@@ -854,11 +876,57 @@ class MainWindow(QMainWindow):
             self, "Add Images", "",
             "Images (*.jpg *.jpeg *.png *.tif *.tiff *.bmp)"
         )
-        for f in files:
-            if not any(a.image_path == f for a in self.project.annotations):
-                station.annotations.append(ImageAnnotation(image_path=f))
-        self._refresh_image_tree()
-        self._set_status(f"Added {len(files)} image(s) to {station.name}")
+        if not files:
+            return
+
+        new_files = [f for f in files
+                     if not any(a.image_path == f for a in self.project.annotations)]
+        if not new_files:
+            self._set_status("Semua gambar sudah ada dalam project.")
+            return
+
+        # Read image dimensions in a background thread so the UI stays responsive
+        _station = station
+        _project = self.project
+
+        def _read_dimensions(cb):
+            from PIL import Image as PILImage
+            total = len(new_files)
+            added: list[ImageAnnotation] = []
+            for i, f in enumerate(new_files):
+                cb(i, total, f"Membaca gambar {i+1}/{total}: {os.path.basename(f)}")
+                ann = ImageAnnotation(image_path=f)
+                try:
+                    with PILImage.open(f) as img:
+                        ann.image_width, ann.image_height = img.size
+                except Exception:
+                    pass
+                added.append(ann)
+            cb(total, total, f"Selesai membaca {total} gambar.")
+            return added
+
+        def _on_done(added_list):
+            dlg.accept()
+            for ann in added_list:
+                _station.annotations.append(ann)
+            self._refresh_image_tree()
+            self._set_status(
+                f"Ditambahkan {len(added_list)} gambar ke {_station.name}"
+            )
+
+        def _on_error(msg):
+            dlg.accept()
+            QMessageBox.warning(self, "Gagal", msg)
+
+        dlg = ProgressDialog(
+            "Menambahkan Gambar…", total=len(new_files), cancellable=False, parent=self
+        )
+        worker = WorkerThread(_read_dimensions, parent=self)
+        worker.progress.connect(dlg.update)
+        worker.succeeded.connect(_on_done)
+        worker.failed.connect(_on_error)
+        worker.start()
+        dlg.exec()
 
     def _add_images_to_station(self, station: Station):
         if not self.project:
@@ -891,20 +959,50 @@ class MainWindow(QMainWindow):
     def _generate_points_all(self):
         if not self.project:
             return
-        for ann in self.project.annotations:
-            ann.points = generate_points(
-                ann.image_width or 1000, ann.image_height or 1000,
-                self.spin_points.value(),
-                self.combo_dist.currentText(),
-                self.spin_border.value(),
-                border_rect=self.project.border_rect,
-                border_polygon=self.project.border_polygon,
-            )
-        current_ann = self._current_annotation()
-        if current_ann:
-            self._reload_canvas_ann(current_ann)
-        self._refresh_image_tree()
-        self._set_status(f"Generated points for all {len(self.project.annotations)} images")
+        _project = self.project
+        _n_pts = self.spin_points.value()
+        _dist = self.combo_dist.currentText()
+        _border = self.spin_border.value()
+
+        def _run(cb):
+            anns = _project.annotations
+            total = len(anns)
+            for i, ann in enumerate(anns):
+                name = os.path.basename(ann.image_path)
+                cb(i, total, f"Generate titik {i+1}/{total}: {name}")
+                ann.points = generate_points(
+                    ann.image_width or 1000, ann.image_height or 1000,
+                    _n_pts, _dist, _border,
+                    border_rect=_project.border_rect,
+                    border_polygon=_project.border_polygon,
+                )
+            cb(total, total, f"Selesai — {total} gambar diproses.")
+            return total
+
+        def _on_done(total):
+            dlg.accept()
+            current_ann = self._current_annotation()
+            if current_ann:
+                self._reload_canvas_ann(current_ann)
+            self._refresh_image_tree()
+            self._set_status(f"Generate titik selesai untuk {total} gambar")
+
+        def _on_error(msg):
+            dlg.accept()
+            QMessageBox.warning(self, "Gagal", msg)
+
+        dlg = ProgressDialog(
+            "Generate Titik…",
+            total=len(_project.annotations),
+            cancellable=False,
+            parent=self,
+        )
+        worker = WorkerThread(_run, parent=self)
+        worker.progress.connect(dlg.update)
+        worker.succeeded.connect(_on_done)
+        worker.failed.connect(_on_error)
+        worker.start()
+        dlg.exec()
 
     def _export_csv(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export CSV", "", "CSV (*.csv)")
@@ -914,9 +1012,32 @@ class MainWindow(QMainWindow):
 
     def _export_excel(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export Excel", "", "Excel (*.xlsx)")
-        if path and self.project:
-            export_excel(self.project, path)
-            self._set_status(f"Exported Excel: {path}")
+        if not path or not self.project:
+            return
+
+        _project = self.project
+
+        def _run(cb):
+            export_excel(_project, path, progress_cb=cb)
+            return path
+
+        def _on_done(out_path):
+            dlg.accept()
+            self._set_status(f"Ekspor Excel selesai: {out_path}")
+
+        def _on_error(msg):
+            dlg.accept()
+            QMessageBox.critical(self, "Gagal Ekspor", msg)
+
+        dlg = ProgressDialog(
+            "Mengekspor Excel…", total=18, cancellable=False, parent=self
+        )
+        worker = WorkerThread(_run, parent=self)
+        worker.progress.connect(dlg.update)
+        worker.succeeded.connect(_on_done)
+        worker.failed.connect(_on_error)
+        worker.start()
+        dlg.exec()
 
     def _export_coral_codes(self):
         if not self.project or not self.project.coral_codes:

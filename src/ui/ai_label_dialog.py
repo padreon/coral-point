@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QTextEdit, QDialogButtonBox, QMessageBox, QFileDialog,
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
+from src.ui.progress_dialog import ProgressDialog, WorkerThread
 
 if TYPE_CHECKING:
     from src.models.project import Project
@@ -163,11 +164,20 @@ class AILabelDialog(QDialog):
             QMessageBox.warning(self, "No model selected", "Please select a .pt model file first.")
             return
 
-        try:
+        _project = self._project
+
+        def _run(cb):
+            cb(0, 0, "Memuat model AI…")
             labeler = AILabeler(path)
+            cb(0, 0, "Memetakan kelas ke kode karang…")
             suggestions = AILabeler.suggest_mapping(
-                labeler.class_names(), self._project.coral_codes
+                labeler.class_names(), _project.coral_codes
             )
+            return labeler, suggestions
+
+        def _on_done(result):
+            dlg.accept()
+            labeler, suggestions = result
             self._mapping_table.populate(suggestions)
             self._hint_label.hide()
             self._mapping_table.show()
@@ -175,13 +185,24 @@ class AILabelDialog(QDialog):
             self._run_btn.setEnabled(True)
             task_label = "detection" if labeler.task == "detect" else "classification"
             QMessageBox.information(
-                self, "Model loaded",
-                f"Model loaded successfully.\n"
-                f"Type: {task_label}\n"
-                f"Classes ({len(labeler.class_names())}): {', '.join(labeler.class_names())}",
+                self, "Model Berhasil Dimuat",
+                f"Model dimuat.\n"
+                f"Tipe: {task_label}\n"
+                f"Kelas ({len(labeler.class_names())}): {', '.join(labeler.class_names())}",
             )
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            QMessageBox.critical(self, "Failed to load model", str(exc))
+
+        def _on_error(msg):
+            dlg.accept()
+            QMessageBox.critical(self, "Gagal Memuat Model", msg)
+
+        dlg = ProgressDialog("Memuat Model AI…", cancellable=False, parent=self)
+        dlg.set_indeterminate("Memuat model, harap tunggu…")
+        worker = WorkerThread(_run, parent=self)
+        worker.progress.connect(dlg.update)
+        worker.succeeded.connect(_on_done)
+        worker.failed.connect(_on_error)
+        worker.start()
+        dlg.exec()
 
     def accept(self) -> None:
         settings = QSettings("coralX", "coralX")
