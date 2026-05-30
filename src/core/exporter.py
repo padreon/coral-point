@@ -154,7 +154,50 @@ def export_excel(project: Project, output_path: str) -> str:
         # --- Map Data sheet (Lapis 3, spatial) ---
         _write_map_data_sheet(writer, project)
 
+    # --- Charts: generate PNGs then embed into Excel (Fase 5) ---
+    chart_dir = Path(output_path).with_suffix("").parent / (Path(output_path).stem + "_charts")
+    chart_paths = _generate_charts(project, str(chart_dir))
+    if chart_paths:
+        _embed_charts_sheet(output_path, chart_paths)
+
     return output_path
+
+
+def _generate_charts(project: Project, chart_dir: str) -> list[str]:
+    """Generate PNG charts to chart_dir. Returns list of paths created.
+
+    Returns empty list silently if matplotlib is not installed.
+    """
+    try:
+        from src.core.plots import export_all_charts
+        return export_all_charts(project, chart_dir)
+    except ImportError:
+        return []
+    except Exception:
+        return []
+
+
+def _embed_charts_sheet(excel_path: str, chart_paths: list[str]) -> None:
+    """Append a 'Charts' sheet to an existing Excel file with embedded PNGs.
+
+    Uses load_workbook post-processing because pd.ExcelWriter does not support
+    add_image while its context manager is open.
+    """
+    from openpyxl import load_workbook
+    from openpyxl.drawing.image import Image as XLImage
+
+    wb = load_workbook(excel_path)
+    ws = wb.create_sheet("Charts")
+    row_cursor = 1
+    for path in chart_paths:
+        if not Path(path).exists():
+            continue
+        img = XLImage(path)
+        img.width = 600
+        img.height = 400
+        ws.add_image(img, f"A{row_cursor}")
+        row_cursor += 22  # ~400px / ~18px per Excel row ≈ 22 rows
+    wb.save(excel_path)
 
 
 def _write_multivariate_sheets(writer: pd.ExcelWriter, project: Project) -> None:
