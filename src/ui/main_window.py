@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QAbstractItemDelegate, QCompleter, QScrollArea,
     QMenu, QCheckBox, QTextEdit, QTabWidget, QLayout, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QThread, QSize, QRect, QPoint, pyqtSignal, QTimer, QUrl
+from PyQt6.QtCore import Qt, QThread, QSize, QRect, QPoint, QSettings, pyqtSignal, QTimer, QUrl
 from typing import Callable
 from PyQt6.QtGui import QIcon, QImage, QPixmap, QDesktopServices
 import os
@@ -340,10 +340,20 @@ class MainWindow(QMainWindow):
         self._thumbnail_loader: ThumbnailLoader | None = None
         self._ai_worker: AILabelWorker | None = None
 
+        _s = QSettings("coralX", "coralX")
+        self._code_btn_height: int = int(_s.value("ui/code_btn_height", 36))
+
         self._build_ui()
         self._build_menu()
         self._build_toolbar()
         self._build_statusbar()
+
+        h_state = _s.value("ui/h_splitter")
+        if h_state:
+            self._h_splitter.restoreState(h_state)
+        v_state = _s.value("ui/v_splitter")
+        if v_state:
+            self._v_splitter.restoreState(v_state)
 
         self._new_project()
 
@@ -423,12 +433,16 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        h_splitter = QSplitter(Qt.Orientation.Horizontal)
-        outer.addWidget(h_splitter, stretch=1)
+        self._v_splitter = QSplitter(Qt.Orientation.Vertical)
+        outer.addWidget(self._v_splitter, stretch=1)
 
-        # ---- Left panel: station tree + settings + progress + stats ----
+        self._h_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._v_splitter.addWidget(self._h_splitter)
+        h_splitter = self._h_splitter
+
+        # ---- Left panel: station tree + settings + stats ----
         left = QWidget()
-        left.setFixedWidth(240)
+        left.setMinimumWidth(160)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(4)
@@ -532,7 +546,7 @@ class MainWindow(QMainWindow):
 
         # ---- Right panel: progress + points table ----
         right = QWidget()
-        right.setFixedWidth(260)
+        right.setMinimumWidth(180)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(8, 8, 8, 8)
         right_layout.setSpacing(4)
@@ -577,7 +591,8 @@ class MainWindow(QMainWindow):
         h_splitter.setSizes([240, 700, 260])
 
         # ---- Bottom: coral codes panel ----
-        outer.addWidget(self._build_codes_panel())
+        self._v_splitter.addWidget(self._build_codes_panel())
+        self._v_splitter.setSizes([560, 160])
 
     def _build_codes_panel(self) -> QWidget:
         panel = QWidget()
@@ -595,6 +610,15 @@ class MainWindow(QMainWindow):
         self._sort_combo.addItems(["Frequency ↓", "A → Z"])
         self._sort_combo.currentIndexChanged.connect(self._refresh_codes_panel)
         header.addWidget(self._sort_combo)
+        header.addWidget(QLabel("Size:"))
+        self._btn_size_spin = QSpinBox()
+        self._btn_size_spin.setRange(24, 72)
+        self._btn_size_spin.setValue(self._code_btn_height)
+        self._btn_size_spin.setSuffix("px")
+        self._btn_size_spin.setFixedWidth(62)
+        self._btn_size_spin.setToolTip("Coral code button height")
+        self._btn_size_spin.valueChanged.connect(self._on_code_btn_size_changed)
+        header.addWidget(self._btn_size_spin)
         btn_add_code = QPushButton("+ Code")
         btn_add_code.clicked.connect(self._add_coral_code)
         header.addWidget(btn_add_code)
@@ -677,7 +701,7 @@ class MainWindow(QMainWindow):
                 count = freq.get(code, 0)
                 btn = QPushButton(f"{code}\n{count}")
                 btn.setMinimumWidth(40)
-                btn.setFixedHeight(36)
+                btn.setFixedHeight(self._code_btn_height)
                 btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
                 btn.setToolTip(f"{code} — {codes[code]}")
                 btn.setStyleSheet(
@@ -699,6 +723,18 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
         self._set_status("Ready")
+
+    def _on_code_btn_size_changed(self, value: int) -> None:
+        self._code_btn_height = value
+        QSettings("coralX", "coralX").setValue("ui/code_btn_height", value)
+        self._refresh_codes_panel()
+
+    def closeEvent(self, event) -> None:
+        s = QSettings("coralX", "coralX")
+        s.setValue("ui/h_splitter", self._h_splitter.saveState())
+        s.setValue("ui/v_splitter", self._v_splitter.saveState())
+        s.setValue("ui/code_btn_height", self._code_btn_height)
+        super().closeEvent(event)
 
     # ----------------------------------------------------------------- actions
 

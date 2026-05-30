@@ -100,7 +100,7 @@ class ImageCanvas(QWidget):
         self._border_clicks = []
         self.setCursor(Qt.CursorShape.CrossCursor)
         if mode == 'polygon':
-            self.status_message.emit("Click to add polygon points  (right-click to close, ESC to cancel)")
+            self.status_message.emit("Click 4 points to define polygon border  (ESC to cancel)")
         else:
             required = 2 if mode == '2point' else 4
             self.status_message.emit(f"Click {required} points to define border  (ESC to cancel)")
@@ -233,10 +233,13 @@ class ImageCanvas(QWidget):
                 img_pos = self._screen_to_image(event.pos())
                 self._border_clicks.append(img_pos)
                 if self._border_mode == 'polygon':
-                    n = len(self._border_clicks)
-                    self.status_message.emit(
-                        f"Polygon: {n} point(s) added  (right-click to close, ESC to cancel)"
-                    )
+                    remaining = 4 - len(self._border_clicks)
+                    if remaining > 0:
+                        self.status_message.emit(
+                            f"Polygon: {remaining} more click(s) remaining  (ESC to cancel)"
+                        )
+                    else:
+                        self._finish_polygon()
                 else:
                     required = 2 if self._border_mode == '2point' else 4
                     remaining = required - len(self._border_clicks)
@@ -245,11 +248,6 @@ class ImageCanvas(QWidget):
                     else:
                         self._finish_border_drawing()
                 self.update()
-            elif self._border_mode == 'polygon' and event.button() == Qt.MouseButton.RightButton:
-                if len(self._border_clicks) >= 3:
-                    self._finish_polygon()
-                else:
-                    self.status_message.emit("Need at least 3 points to close polygon")
             return
 
         if event.button() == Qt.MouseButton.MiddleButton:
