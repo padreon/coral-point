@@ -1,6 +1,5 @@
 """Unit tests for src/core/validation.py."""
 
-import pytest
 from src.core.validation import (
     ValidationResult,
     validate_metadata_completeness,

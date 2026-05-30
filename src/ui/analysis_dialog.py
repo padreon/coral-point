@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QCheckBox, QComboBox, QLabel, QPushButton,
-    QDialogButtonBox, QFileDialog, QMessageBox,
+    QCheckBox, QComboBox, QLabel, QDialogButtonBox, QFileDialog, QMessageBox,
 )
-from PyQt6.QtCore import Qt
 
 from src.core.validation import (
     can_run_multivariate,

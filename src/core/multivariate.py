@@ -6,6 +6,7 @@ Functions are pure (no PyQt, no side effects).
 Default biotic_only=True and TWS always excluded so abiotic substrate codes
 don't dominate Bray-Curtis distances.
 """
+# pylint: disable=invalid-name,too-many-locals
 
 from __future__ import annotations
 
@@ -157,7 +158,7 @@ def hierarchical_clusters(
         (linkage array is in scipy format; pass to scipy.cluster.hierarchy.dendrogram)
     """
     condensed = squareform(distance_matrix)
-    Z = _scipy_linkage(condensed, method=method)
+    Z = _scipy_linkage(condensed, method=method)  # type: ignore[arg-type]
     return {"linkage": Z, "method": method}
 
 

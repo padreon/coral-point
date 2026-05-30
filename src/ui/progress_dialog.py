@@ -71,7 +71,7 @@ class ProgressDialog(QDialog):
         self._total = total
         self._cancelled = False
 
-    def update(self, done: int, total: int, msg: str) -> None:
+    def refresh(self, done: int, total: int, msg: str) -> None:
         """Refresh the dialog — safe to call from the main thread via signal."""
         if total != self._total and total > 0:
             self._total = total

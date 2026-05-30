@@ -198,7 +198,7 @@ class AILabelDialog(QDialog):
         dlg = ProgressDialog("Loading AI Model…", cancellable=False, parent=self)
         dlg.set_indeterminate("Loading model, please wait…")
         worker = WorkerThread(_run, parent=self)
-        worker.progress.connect(dlg.update)
+        worker.progress.connect(dlg.refresh)
         worker.succeeded.connect(_on_done)
         worker.failed.connect(_on_error)
         worker.start()

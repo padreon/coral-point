@@ -146,7 +146,8 @@ def export_excel(
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         # Summary
-        step += 1; _cb(step, TOTAL, "Writing Summary sheet…")
+        step += 1
+        _cb(step, TOTAL, "Writing Summary sheet…")
         row_cursor = 0
         pd.DataFrame(s1_rows).to_excel(
             writer, sheet_name="Summary", index=False, startrow=row_cursor)
@@ -159,31 +160,39 @@ def export_excel(
             pd.DataFrame(grp_rows).to_excel(
                 writer, sheet_name="Summary", index=False, startrow=row_cursor)
 
-        step += 1; _cb(step, TOTAL, "Writing Group Coverage sheet…")
+        step += 1
+        _cb(step, TOTAL, "Writing Group Coverage sheet…")
         pd.DataFrame(grp_sheet_rows).fillna(0).to_excel(writer, sheet_name="Group Coverage", index=False)
 
-        step += 1; _cb(step, TOTAL, "Writing Per Station sheet…")
+        step += 1
+        _cb(step, TOTAL, "Writing Per Station sheet…")
         pd.DataFrame(per_station).fillna(0).to_excel(writer, sheet_name="Per Station", index=False)
 
-        step += 1; _cb(step, TOTAL, f"Writing Per Image sheet ({len(per_image)} images)…")
+        step += 1
+        _cb(step, TOTAL, f"Writing Per Image sheet ({len(per_image)} images)…")
         pd.DataFrame(per_image).fillna(0).to_excel(writer, sheet_name="Per Image", index=False)
 
-        step += 1; _cb(step, TOTAL, "Writing Statistics sheet…")
+        step += 1
+        _cb(step, TOTAL, "Writing Statistics sheet…")
         pd.DataFrame(stats_rows).to_excel(writer, sheet_name="Statistics", index=False)
 
         if cover_rows:
-            step += 1; _cb(step, TOTAL, "Writing Cover Area sheet…")
+            step += 1
+            _cb(step, TOTAL, "Writing Cover Area sheet…")
             pd.DataFrame(cover_rows).fillna(0).to_excel(writer, sheet_name="Cover Area", index=False)
         else:
             step += 1
 
-        step += 1; _cb(step, TOTAL, f"Writing Raw Points sheet ({len(raw_rows):,} points)…")
+        step += 1
+        _cb(step, TOTAL, f"Writing Raw Points sheet ({len(raw_rows):,} points)…")
         pd.DataFrame(raw_rows).to_excel(writer, sheet_name="Raw Points", index=False)
 
-        step += 1; _cb(step, TOTAL, "Computing multivariate analysis…")
+        step += 1
+        _cb(step, TOTAL, "Computing multivariate analysis…")
         _write_multivariate_sheets(writer, project)
 
-        step += 1; _cb(step, TOTAL, "Writing Map Data sheet…")
+        step += 1
+        _cb(step, TOTAL, "Writing Map Data sheet…")
         _write_map_data_sheet(writer, project)
 
     # --- Charts: generate PNGs then embed into Excel (Fase 5) ---
@@ -194,10 +203,7 @@ def export_excel(
     chart_dir = Path(output_path).with_suffix("").parent / (Path(output_path).stem + "_charts")
     chart_paths: list[str] = []
     try:
-        from src.core.plots import export_all_charts as _export_charts
-        # Generate charts one by one so we can report progress
         import os
-        from src.core.statistics import project_summary as _ps, per_station_table as _pst
         from src.core.validation import can_run_multivariate as _gate
         from src.core.plots import (
             plot_coverage_bar, plot_lifeform_pie, plot_diversity_bar,
@@ -238,9 +244,9 @@ def export_excel(
             label = fname.split("_", 1)[1].replace(".png", "").replace("_", " ").title()
             step += 1
             _cb(step, TOTAL, f"Generating chart {i+1}/{len(chart_fns)}: {label}…")
-            p = fn()
-            if p:
-                chart_paths.append(p)
+            chart_path = fn()
+            if chart_path:
+                chart_paths.append(chart_path)
 
     except ImportError:
         step += len(chart_names)
@@ -248,7 +254,8 @@ def export_excel(
         step += len(chart_names)
 
     if chart_paths:
-        step += 1; _cb(step, TOTAL, f"Embedding {len(chart_paths)} charts into Excel…")
+        step += 1
+        _cb(step, TOTAL, f"Embedding {len(chart_paths)} charts into Excel…")
         _embed_charts_sheet(output_path, chart_paths)
 
     _cb(TOTAL, TOTAL, "Done.")

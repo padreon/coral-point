@@ -12,12 +12,16 @@ from datetime import date
 
 @dataclass
 class ValidationResult:
+    """Result of a prerequisite validation check."""
+
     ok: bool
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
-def validate_metadata_completeness(project: object) -> dict[str, ValidationResult]:
+def validate_metadata_completeness(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+    project: object,
+) -> dict[str, ValidationResult]:
     """Check per-analysis metadata prerequisites.
 
     Keys returned: 'temporal', 'spatial', 'area', 'depth'.
@@ -132,7 +136,7 @@ def validate_sampling_consistency(project: object) -> ValidationResult:
         for ann in getattr(st, "annotations", []):
             labeled = sum(1 for p in getattr(ann, "points", []) if getattr(p, "label", None))
             labeled_counts.append(labeled)
-            if labeled > 0 and labeled < 25:
+            if 0 < labeled < 25:
                 warnings.append(
                     f"{ann.image_path}: only {labeled} labeled points (< 25, less reliable)."
                 )

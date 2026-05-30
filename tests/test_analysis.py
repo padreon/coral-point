@@ -1,6 +1,5 @@
 """Unit tests for src/core/analysis.py — Fase 1 ecological indices."""
 
-import math
 import pytest
 from src.core.analysis import (
     mortality_index,

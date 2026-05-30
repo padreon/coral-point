@@ -6,6 +6,7 @@ of the app keeps working if it is not installed.
 
 Call export_all_charts(project, output_dir) to generate every applicable chart.
 """
+# pylint: disable=import-outside-toplevel,too-many-locals
 
 from __future__ import annotations
 
@@ -94,7 +95,7 @@ def plot_lifeform_pie(summary: dict, output_path: str) -> str | None:
 
     fig, ax = plt.subplots(figsize=(7, 7))
     wedge_props = {"width": 0.5, "edgecolor": "white", "linewidth": 2}
-    wedges, texts, autotexts = ax.pie(
+    wedges, _texts, autotexts = ax.pie(
         sizes,
         labels=None,
         autopct=lambda p: f"{p:.1f}%" if p > 2 else "",
@@ -104,7 +105,7 @@ def plot_lifeform_pie(summary: dict, output_path: str) -> str | None:
     for at in autotexts:
         at.set_fontsize(9)
 
-    ax.legend(wedges, [f"{l} ({s:.1f}%)" for l, s in zip(labels, sizes)],
+    ax.legend(wedges, [f"{lbl} ({s:.1f}%)" for lbl, s in zip(labels, sizes)],
               loc="center left", bbox_to_anchor=(1, 0, 0.5, 1), fontsize=9)
     ax.set_title("Life-form Composition", fontweight="bold", pad=16)
 
@@ -133,9 +134,9 @@ def plot_diversity_bar(per_station_rows: list[dict], output_path: str) -> str | 
     width = 0.25
 
     fig, ax = plt.subplots(figsize=(max(8, len(stations) * 1.2), 6))
-    b1 = ax.bar(x - width, shannon, width, label="Shannon H'",   color="#4878CF", alpha=0.85)
-    b2 = ax.bar(x,          simpson, width, label="Simpson 1-D", color="#6ACC65", alpha=0.85)
-    b3 = ax.bar(x + width,  hill_q1, width, label="Hill q1",     color="#D65F5F", alpha=0.85)
+    ax.bar(x - width, shannon, width, label="Shannon H'",   color="#4878CF", alpha=0.85)
+    ax.bar(x,          simpson, width, label="Simpson 1-D", color="#6ACC65", alpha=0.85)
+    ax.bar(x + width,  hill_q1, width, label="Hill q1",     color="#D65F5F", alpha=0.85)
 
     ax.set_xticks(x)
     ax.set_xticklabels(stations, rotation=30, ha="right", fontsize=9)
@@ -179,8 +180,8 @@ def plot_mortality_bar(per_station_rows: list[dict], output_path: str) -> str | 
     ax.set_title("Mortality Index per Station", fontweight="bold", pad=12)
     ax.legend(fontsize=9)
 
-    for bar, mi in zip(bars, mis):
-        ax.text(bar.get_x() + bar.get_width() / 2, mi + 0.02,
+    for rect, mi in zip(bars, mis):
+        ax.text(rect.get_x() + rect.get_width() / 2, mi + 0.02,
                 f"{mi:.2f}", ha="center", va="bottom", fontsize=8)
 
     fig.tight_layout()

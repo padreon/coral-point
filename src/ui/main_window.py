@@ -838,7 +838,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Open Failed", f"Could not open project:\n{msg}")
 
         worker = WorkerThread(_load, parent=self)
-        worker.progress.connect(dlg.update)
+        worker.progress.connect(dlg.refresh)
         worker.succeeded.connect(_on_done)
         worker.failed.connect(_on_error)
         worker.start()
@@ -922,7 +922,7 @@ class MainWindow(QMainWindow):
             "Adding Images…", total=len(new_files), cancellable=False, parent=self
         )
         worker = WorkerThread(_read_dimensions, parent=self)
-        worker.progress.connect(dlg.update)
+        worker.progress.connect(dlg.refresh)
         worker.succeeded.connect(_on_done)
         worker.failed.connect(_on_error)
         worker.start()
@@ -998,7 +998,7 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         worker = WorkerThread(_run, parent=self)
-        worker.progress.connect(dlg.update)
+        worker.progress.connect(dlg.refresh)
         worker.succeeded.connect(_on_done)
         worker.failed.connect(_on_error)
         worker.start()
@@ -1033,7 +1033,7 @@ class MainWindow(QMainWindow):
             "Exporting Excel…", total=18, cancellable=False, parent=self
         )
         worker = WorkerThread(_run, parent=self)
-        worker.progress.connect(dlg.update)
+        worker.progress.connect(dlg.refresh)
         worker.succeeded.connect(_on_done)
         worker.failed.connect(_on_error)
         worker.start()

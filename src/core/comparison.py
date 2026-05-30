@@ -3,6 +3,7 @@
 Fase 2 — Lapis 2 (bootstrap CI) and Lapis 3 (group tests, temporal/depth analyses).
 All functions are pure: no PyQt, no side effects.
 """
+# pylint: disable=import-outside-toplevel,broad-exception-caught,too-many-locals
 
 from __future__ import annotations
 
@@ -92,11 +93,13 @@ def compare_groups(
     except Exception as exc:
         return {"error": str(exc)}
 
+    stat_val = float(stat)  # type: ignore[arg-type]
+    p_val = float(p)  # type: ignore[arg-type]
     return {
         "method": chosen,
-        "statistic": round(float(stat), 6),
-        "p_value": round(float(p), 6),
-        "significant": bool(p < 0.05),
+        "statistic": round(stat_val, 6),
+        "p_value": round(p_val, 6),
+        "significant": bool(p_val < 0.05),
     }
 
 
