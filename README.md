@@ -1,6 +1,6 @@
 # coralX
 
-**coralX** is an open-source desktop app for coral reef benthic monitoring using the point count method — a modern, cross-platform replacement for [CPCe (Coral Point Count with Excel extensions)](https://hcas.nova.edu/tools-and-resources/cpce/).
+**coralX** is an open-source desktop app for coral reef benthic monitoring using the point count method — a modern, cross-platform replacement for [CPCe (Coral Point Count with Excel extensions)](https://nsuworks.nova.edu/software/2/).
 
 Built with Python, PyQt6, and OpenCV.
 
