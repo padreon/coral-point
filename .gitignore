@@ -28,7 +28,12 @@ Thumbs.db
 .env
 *.env.local
 
+
 # Project-specific
 *.cpce.bak
 data-training/
 CLAUDE.md
+tools/training_config.yaml
+training_data/
+assets/icon_*.png
+assets/icon.iconset/

@@ -7,13 +7,15 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QAbstractItemDelegate, QCompleter, QScrollArea,
     QMenu, QCheckBox, QTextEdit, QTabWidget,
 )
-from PyQt6.QtCore import Qt, QThread, QSize, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QThread, QSize, pyqtSignal, QTimer, QUrl
 from typing import Callable
-from PyQt6.QtGui import QIcon, QImage, QPixmap
+from PyQt6.QtGui import QIcon, QImage, QPixmap, QDesktopServices
 import os
 
+from src.core.logger import get_logger, log_path
 from src.ui.image_canvas import ImageCanvas
 from src.ui.calibration_dialog import CalibrationDialog
+from src.ui.ai_label_dialog import AILabelDialog, AIProgressDialog
 from src.ui.import_dialogs import (
     ImportResultDialog, CoralCodesMergeDialog,
     StationMergeDialog, CpceImportDialog,
@@ -21,6 +23,7 @@ from src.ui.import_dialogs import (
 from src.models.project import Project, ImageAnnotation, Station
 from src.core.point_generator import generate_points
 from src.core.statistics import project_summary
+from src.core.ai_labeler import AILabelWorker
 from src.core.analysis import photo_area
 from src.core.exporter import export_csv, export_excel, export_coral_codes
 from src.core.importer import (
@@ -67,7 +70,9 @@ class ManageGroupsDialog(QDialog):
 
         self._table = QTableWidget(0, 2)
         self._table.setHorizontalHeaderLabels(["Group Name", "Codes (comma-separated)"])
-        self._table.horizontalHeader().setStretchLastSection(True)
+        _header = self._table.horizontalHeader()
+        if _header is not None:
+            _header.setStretchLastSection(True)
         self._table.setColumnWidth(0, 150)
         layout.addWidget(self._table)
 
@@ -267,9 +272,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("coralX — Coral Point Count")
         self.setMinimumSize(1100, 720)
 
+        self._log = get_logger("coralX.ui")
         self.project: Project | None = None
         self._syncing: bool = False
         self._thumbnail_loader: ThumbnailLoader | None = None
+        self._ai_worker: AILabelWorker | None = None
 
         self._build_ui()
         self._build_menu()
@@ -311,6 +318,8 @@ class MainWindow(QMainWindow):
         image_menu.addSeparator()
         image_menu.addAction("Generate Points (This Image)", self._generate_points_current)
         image_menu.addAction("Generate Points (All Images)", self._generate_points_all)
+        image_menu.addSeparator()
+        image_menu.addAction("AI Auto-Label…", self._ai_auto_label)
 
         view_menu = menubar.addMenu("&View")
         view_menu.addAction("Zoom In", "Ctrl++", self.canvas.zoom_in)
@@ -318,6 +327,8 @@ class MainWindow(QMainWindow):
         view_menu.addAction("Fit to Window", "Ctrl+0", self.canvas.zoom_fit)
 
         help_menu = menubar.addMenu("&Help")
+        help_menu.addAction("Open Log File…", self._open_log_file)
+        help_menu.addSeparator()
         help_menu.addAction("About", self._show_about)
 
     def _build_toolbar(self):
@@ -335,6 +346,8 @@ class MainWindow(QMainWindow):
         tb.addAction("⊡ Fit", self.canvas.zoom_fit)
         tb.addSeparator()
         tb.addAction("📏 Calibrate", self._calibrate_scale)
+        tb.addSeparator()
+        tb.addAction("🤖 AI Label", self._ai_auto_label)
         tb.addSeparator()
         tb.addAction("📊 Stats", self._show_stats)
         tb.addAction("💾 Export Excel", self._export_excel)
@@ -632,11 +645,17 @@ class MainWindow(QMainWindow):
     def _open_project(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open Project", "", "coralX (*.cpce)")
         if path:
-            self.project = Project.load(path)
+            try:
+                self.project = Project.load(path)
+            except Exception as exc:
+                self._log.exception("Failed to open project: %s", path)
+                QMessageBox.critical(self, "Open Failed", f"Could not open project:\n{exc}")
+                return
             self._refresh_image_tree()
             self._refresh_codes_panel()
             self._label_delegate.update_codes(self.project.coral_codes)
             self.setWindowTitle(f"coralX — {self.project.name}")
+            self._log.info("Opened project: %s", path)
             self._set_status(f"Opened: {path}")
 
     def _save_project(self):
@@ -644,9 +663,17 @@ class MainWindow(QMainWindow):
             return
         path = self.project.save_path
         if not path:
-            path, _ = QFileDialog.getSaveFileName(self, "Save Project", self.project.name, "coralX (*.cpce)")
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save Project", self.project.name, "coralX (*.cpce)"
+            )
         if path:
-            self.project.save(path)
+            try:
+                self.project.save(path)
+            except Exception as exc:
+                self._log.exception("Failed to save project: %s", path)
+                QMessageBox.critical(self, "Save Failed", f"Could not save project:\n{exc}")
+                return
+            self._log.info("Saved project: %s", path)
             self._set_status(f"Saved: {path}")
 
     def _add_images(self):
@@ -1128,6 +1155,16 @@ class MainWindow(QMainWindow):
             self.project.coral_groups = dlg.get_groups()
             self._refresh_codes_panel()
 
+    def _open_log_file(self) -> None:
+        path = log_path()
+        if not path.exists():
+            QMessageBox.information(
+                self, "Log File",
+                f"No log file yet.\n\nIt will be created at:\n{path}",
+            )
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
     def _show_about(self):
         QMessageBox.about(self, "coralX",
             "coralX — Coral Point Count\n\n"
@@ -1186,6 +1223,7 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
         )
         if reply == QMessageBox.StandardButton.Yes:
+            assert self.project is not None
             self.project.stations.remove(station)
             self._refresh_image_tree()
             ann = self._current_annotation()
@@ -1295,6 +1333,8 @@ class MainWindow(QMainWindow):
         img = cv2.imread(ann.image_path)
         if img is not None:
             ann.image_height, ann.image_width = img.shape[:2]
+        else:
+            self._log.warning("Could not read image file: %s", ann.image_path)
 
         if self.project.border_rect:
             self.canvas.set_border_rect(tuple(self.project.border_rect))
@@ -1579,4 +1619,116 @@ class MainWindow(QMainWindow):
         self._syncing = False
 
     def _set_status(self, msg: str):
-        self.statusBar().showMessage(msg)
+        if (bar := self.statusBar()) is not None:
+            bar.showMessage(msg)
+
+    # ---------------------------------------------------------------- AI label
+
+    def _ai_auto_label(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "AI Auto-Label", "Open or create a project first.")
+            return
+
+        if self._ai_worker is not None and self._ai_worker.isRunning():
+            QMessageBox.information(self, "AI Auto-Label", "Inference is already running.")
+            return
+
+        dlg = AILabelDialog(self.project, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        scope = dlg.scope()
+        if scope == "image":
+            ann = self._current_annotation()
+            if ann is None:
+                QMessageBox.warning(self, "AI Auto-Label", "No image selected.")
+                return
+            annotations = [ann]
+        elif scope == "station":
+            station = self._current_station()
+            if station is None:
+                QMessageBox.warning(self, "AI Auto-Label", "No station selected.")
+                return
+            annotations = list(station.annotations)
+        else:
+            annotations = list(self.project.annotations)
+
+        annotations = [a for a in annotations if a.points]
+        if not annotations:
+            QMessageBox.information(self, "AI Auto-Label", "No points found in the selected scope.")
+            return
+
+        overwrite = dlg.overwrite_labeled()
+        total_points = sum(
+            len([p for p in a.points if overwrite or p.label is None])
+            for a in annotations
+        )
+        if total_points == 0:
+            QMessageBox.information(
+                self, "AI Auto-Label",
+                "All points are already labeled.\n"
+                "Uncheck 'Label only unlabeled points' to re-label all.",
+            )
+            return
+
+        labeler = dlg.labeler
+        if labeler is None:
+            QMessageBox.warning(
+                self, "AI Auto-Label",
+                "No model loaded. Please click 'Load Model & Detect Classes' before running.",
+            )
+            return
+
+        progress_dlg = AIProgressDialog(total_points, self)
+        worker = AILabelWorker(
+            labeler=labeler,
+            annotations=annotations,
+            class_mapping=dlg.class_mapping(),
+            conf_threshold=dlg.conf_threshold(),
+            crop_size=dlg.crop_size(),
+            overwrite_labeled=overwrite,
+            parent=self,
+        )
+        self._ai_worker = worker
+
+        worker.progress.connect(progress_dlg.on_progress)
+        worker.error.connect(progress_dlg.on_error)
+        worker.result_ready.connect(self._on_ai_results_ready)
+        worker.finished.connect(progress_dlg.on_finished)
+        worker.finished.connect(self._clear_ai_worker)
+        worker.finished.connect(worker.deleteLater)
+        progress_dlg.cancel_requested.connect(worker.cancel)
+
+        worker.start()
+        progress_dlg.exec()
+        # _ai_worker is cleared by _clear_ai_worker when finished fires.
+        # If the dialog is closed before the worker finishes, the guard stays
+        # set until the thread completes, preventing concurrent runs.
+
+    def _on_ai_results_ready(self, results: list) -> None:
+        if self.project is None:
+            return
+        label_map: dict[str, dict[int, str]] = {}
+        for r in results:
+            if r.mapped_code is not None:
+                label_map.setdefault(r.annotation_path, {})[r.point_index] = r.mapped_code
+
+        labeled_count = 0
+        for ann in self.project.annotations:
+            point_updates = label_map.get(ann.image_path, {})
+            for p in ann.points:
+                if p.index in point_updates:
+                    p.label = point_updates[p.index]
+                    labeled_count += 1
+
+        current_ann = self._current_annotation()
+        if current_ann:
+            self._reload_canvas_ann(current_ann)
+        self._update_progress(current_ann)
+        self._update_quick_stats()
+        self._refresh_codes_panel()
+        self._refresh_image_tree()
+        self._set_status(f"AI auto-label complete: {labeled_count} point(s) labeled.")
+
+    def _clear_ai_worker(self) -> None:
+        self._ai_worker = None

@@ -44,33 +44,41 @@ def export_excel(project: Project, output_path: str) -> str:
                     "category": p.category or "",
                 })
 
-    # Summary sheet
-    summary_rows: list[dict] = []
+    # Summary sheet — three separate sub-tables written at different row offsets:
+    #   1. Key metrics      (Metric | Value)
+    #   2. Coverage + CI    (Code | Coverage (%) | 95% CI Lower (%) | 95% CI Upper (%))
+    #   3. Group coverage   (Group | Coverage (%))
+    s1_rows: list[dict] = []
+    cov_rows: list[dict] = []
+    grp_rows: list[dict] = []
     if summary:
-        summary_rows += [
-            {"metric": "Total points",             "value": summary["total_points"]},
-            {"metric": "Labeled points",           "value": summary["labeled_points"]},
-            {"metric": "",                          "value": ""},
-            {"metric": "Species richness (S)",     "value": summary.get("species_richness", "")},
-            {"metric": "Shannon diversity (H')",   "value": summary.get("shannon_diversity", "")},
-            {"metric": "Simpson diversity (1-D)",  "value": summary.get("simpson_diversity", "")},
-            {"metric": "Pielou evenness (J')",     "value": summary.get("pielou_evenness", "")},
-            {"metric": "Margalef richness (d)",    "value": summary.get("margalef_richness", "")},
-            {"metric": "Fisher alpha (α)",         "value": summary.get("fisher_alpha", "")},
-            {"metric": "",                          "value": ""},
+        s1_rows = [
+            {"Metric": "Total points",            "Value": summary["total_points"]},
+            {"Metric": "Labeled points",          "Value": summary["labeled_points"]},
+            {"Metric": "",                         "Value": ""},
+            {"Metric": "Species richness (S)",    "Value": summary.get("species_richness", "")},
+            {"Metric": "Shannon diversity (H')",  "Value": summary.get("shannon_diversity", "")},
+            {"Metric": "Simpson diversity (1-D)", "Value": summary.get("simpson_diversity", "")},
+            {"Metric": "Pielou evenness (J')",    "Value": summary.get("pielou_evenness", "")},
+            {"Metric": "Margalef richness (d)",   "Value": summary.get("margalef_richness", "")},
+            {"Metric": "Fisher alpha (α)",        "Value": summary.get("fisher_alpha", "")},
         ]
-        for label, info in summary.get("coverage_ci", {}).items():
-            summary_rows.append({
-                "metric": f"Coverage — {label}",
-                "value": f"{info['pct']}%  (95% CI: {info['ci_lower']}%–{info['ci_upper']}%)",
-            })
-        if summary.get("group_coverage"):
-            summary_rows.append({"metric": "", "value": ""})
-            for grp, pct in summary["group_coverage"].items():
-                summary_rows.append({"metric": f"Group — {grp}", "value": f"{pct}%"})
+        cov_rows = [
+            {
+                "Code": label,
+                "Coverage (%)": info["pct"],
+                "95% Confidence Interval Lower (%)": info["ci_lower"],
+                "95% Confidence Interval Upper (%)": info["ci_upper"],
+            }
+            for label, info in summary.get("coverage_ci", {}).items()
+        ]
+        grp_rows = [
+            {"Group": grp, "Coverage (%)": pct}
+            for grp, pct in summary.get("group_coverage", {}).items()
+        ]
 
     # Group coverage sheet: one row per station + project total
-    grp_rows: list[dict] = []
+    grp_sheet_rows: list[dict] = []
     all_grp_names: set[str] = set()
     for station in project.stations:
         from src.core.statistics import station_summary
@@ -79,12 +87,12 @@ def export_excel(project: Project, output_path: str) -> str:
         all_grp_names.update(grp_cov.keys())
         row: dict = {"station": station.name}
         row.update(grp_cov)
-        grp_rows.append(row)
+        grp_sheet_rows.append(row)
     # Project total row
     if summary.get("group_coverage"):
         total_row: dict = {"station": "PROJECT TOTAL"}
         total_row.update(summary["group_coverage"])
-        grp_rows.append(total_row)
+        grp_sheet_rows.append(total_row)
 
     # Cover area sheet (only for calibrated annotations)
     cover_rows: list[dict] = []
@@ -109,8 +117,19 @@ def export_excel(project: Project, output_path: str) -> str:
     stats_rows = _coverage_statistics(project)
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Summary", index=False)
-        pd.DataFrame(grp_rows).fillna(0).to_excel(writer, sheet_name="Group Coverage", index=False)
+        # Summary: write three sub-tables with a blank row between each
+        row_cursor = 0
+        pd.DataFrame(s1_rows).to_excel(
+            writer, sheet_name="Summary", index=False, startrow=row_cursor)
+        row_cursor += len(s1_rows) + 2  # header + data + blank separator
+        if cov_rows:
+            pd.DataFrame(cov_rows).to_excel(
+                writer, sheet_name="Summary", index=False, startrow=row_cursor)
+            row_cursor += len(cov_rows) + 2
+        if grp_rows:
+            pd.DataFrame(grp_rows).to_excel(
+                writer, sheet_name="Summary", index=False, startrow=row_cursor)
+        pd.DataFrame(grp_sheet_rows).fillna(0).to_excel(writer, sheet_name="Group Coverage", index=False)
         pd.DataFrame(per_station).fillna(0).to_excel(writer, sheet_name="Per Station", index=False)
         pd.DataFrame(per_image).fillna(0).to_excel(writer, sheet_name="Per Image", index=False)
         pd.DataFrame(stats_rows).to_excel(writer, sheet_name="Statistics", index=False)

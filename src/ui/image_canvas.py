@@ -180,6 +180,7 @@ class ImageCanvas(QWidget):
         return t
 
     def _draw_points(self, painter: QPainter):
+        assert self._annotation is not None
         font = QFont("Arial", LABEL_FONT_SIZE)
         font.setBold(True)
         painter.setFont(font)
@@ -356,11 +357,14 @@ class ImageCanvas(QWidget):
         menu.setTitle(f"Point #{point.index + 1}")
 
         if not self._coral_codes:
-            menu.addAction("(No coral codes loaded)").setEnabled(False)
+            no_code_action = menu.addAction("(No coral codes loaded)")
+            if no_code_action is not None:
+                no_code_action.setEnabled(False)
         else:
             for code, description in self._coral_codes.items():
                 action = menu.addAction(f"{code} — {description}")
-                action.setData(code)
+                if action is not None:
+                    action.setData(code)
 
         menu.addSeparator()
         clear_action = menu.addAction("Clear label")

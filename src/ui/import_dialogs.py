@@ -61,12 +61,11 @@ class CoralCodesMergeDialog(QDialog):
         merge_layout.addWidget(self._radio_replace)
         layout.addWidget(merge_box)
 
+        self._chk_groups: QCheckBox | None = None
         if has_groups:
             self._chk_groups = QCheckBox("Also import group definitions from file")
             self._chk_groups.setChecked(True)
             layout.addWidget(self._chk_groups)
-        else:
-            self._chk_groups = None
 
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -109,6 +108,8 @@ class StationMergeDialog(QDialog):
         lbl.setWordWrap(True)
         layout.addWidget(lbl)
 
+        self._radio_update: QRadioButton | None = None
+        self._radio_skip: QRadioButton | None = None
         if overlap:
             conflict_box = QGroupBox("For conflicting stations:")
             cb_layout = QVBoxLayout(conflict_box)
@@ -118,9 +119,6 @@ class StationMergeDialog(QDialog):
             cb_layout.addWidget(self._radio_update)
             cb_layout.addWidget(self._radio_skip)
             layout.addWidget(conflict_box)
-        else:
-            self._radio_update = None
-            self._radio_skip = None
 
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
