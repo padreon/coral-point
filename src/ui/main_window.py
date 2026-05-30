@@ -440,6 +440,27 @@ class MainWindow(QMainWindow):
         tb.addAction("📊 Stats", self._show_stats)
         tb.addAction("💾 Export Excel", self._export_excel)
 
+        # Spacer pushes the progress section to the right
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
+
+        self._progress_scope_combo = QComboBox()
+        self._progress_scope_combo.addItems(["Image", "Station", "Project"])
+        self._progress_scope_combo.setFixedWidth(80)
+        self._progress_scope_combo.setToolTip("Progress scope")
+        self._progress_scope_combo.currentIndexChanged.connect(self._on_scope_changed)
+        tb.addWidget(self._progress_scope_combo)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFixedWidth(190)
+        self.progress_bar.setFixedHeight(18)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("No image")
+        tb.addWidget(self.progress_bar)
+
     # ------------------------------------------------------------------- UI
 
     def _build_ui(self):
@@ -462,23 +483,6 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(4)
-
-        # Progress at the very top
-        scope_row = QHBoxLayout()
-        scope_row.addWidget(QLabel("Progress:"))
-        self._progress_scope_combo = QComboBox()
-        self._progress_scope_combo.addItems(["This image", "This station", "Project"])
-        self._progress_scope_combo.currentIndexChanged.connect(self._on_scope_changed)
-        scope_row.addWidget(self._progress_scope_combo)
-        left_layout.addLayout(scope_row)
-
-        self.progress_label = QLabel("No image loaded")
-        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        left_layout.addWidget(self.progress_label)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(True)
-        left_layout.addWidget(self.progress_bar)
 
         # Images header row with filter checkbox
         img_header = QHBoxLayout()
@@ -1551,13 +1555,13 @@ class MainWindow(QMainWindow):
     def _update_progress(self, ann: ImageAnnotation | None):
         if not self.project or ann is None:
             self.progress_bar.setValue(0)
-            self.progress_label.setText("No image loaded")
+            self.progress_bar.setFormat("No image")
             return
         scope = self._progress_scope_combo.currentText()
-        if scope == "This image":
+        if scope == "Image":
             total = len(ann.points)
             labeled = ann.labeled_count()
-        elif scope == "This station":
+        elif scope == "Station":
             st = self._current_station()
             if st:
                 total = st.total_points()
@@ -1570,7 +1574,7 @@ class MainWindow(QMainWindow):
             labeled = sum(a.labeled_count() for a in self.project.annotations)
         pct = int(labeled / total * 100) if total > 0 else 0
         self.progress_bar.setValue(pct)
-        self.progress_label.setText(f"{labeled} / {total} labeled")
+        self.progress_bar.setFormat(f"{labeled}/{total}")
 
     def _on_scope_changed(self):
         ann = self._current_annotation()
