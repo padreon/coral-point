@@ -16,15 +16,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.models.project import Project
 
-# Colour mapping for Gomez & Yap reef health categories
+# Colour mapping for Gomez & Yap reef health categories (English keys)
 _HEALTH_COLORS = {
-    "Buruk": "#d62728",       # red
-    "Sedang": "#ff7f0e",      # orange
-    "Baik": "#2ca02c",        # green
-    "Sangat Baik": "#1f77b4", # blue
-    "Poor": "#d62728",
-    "Fair": "#ff7f0e",
-    "Good": "#2ca02c",
+    "Poor":      "#d62728",
+    "Fair":      "#ff7f0e",
+    "Good":      "#2ca02c",
     "Excellent": "#1f77b4",
 }
 
@@ -199,7 +195,7 @@ def plot_reef_health(per_station_rows: list[dict], output_path: str) -> str | No
     Background zones mark the four classification thresholds (0-25, 25-50, 50-75, 75-100).
     """
     rows = [r for r in per_station_rows
-            if r.get("reef_health_category") is not None
+            if r.get("reef_health_category_en") is not None
             and r.get("group_Hard Coral") is not None]
     if not rows:
         return None
@@ -208,7 +204,7 @@ def plot_reef_health(per_station_rows: list[dict], output_path: str) -> str | No
 
     stations = [r["station"] for r in rows]
     live_pcts = [float(r.get("group_Hard Coral", 0)) for r in rows]
-    categories = [r.get("reef_health_category", "") for r in rows]
+    categories = [r.get("reef_health_category_en", "") for r in rows]
     bar_colors = [_HEALTH_COLORS.get(cat, "#aaaaaa") for cat in categories]
 
     fig, ax = plt.subplots(figsize=(10, max(4, len(stations) * 0.5)))
