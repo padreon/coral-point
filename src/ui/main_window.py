@@ -593,6 +593,7 @@ class MainWindow(QMainWindow):
         self.points_table = QTableWidget(0, 2)
         self.points_table.setHorizontalHeaderLabels(["#", "Label"])
         self.points_table.horizontalHeader().setStretchLastSection(True)
+        self.points_table.verticalHeader().setVisible(False)
         self.points_table.setColumnWidth(0, 40)
         self.points_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.points_table.setEditTriggers(

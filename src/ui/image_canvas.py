@@ -205,7 +205,10 @@ class ImageCanvas(QWidget):
 
     def _draw_points(self, painter: QPainter):
         assert self._annotation is not None
-        font = QFont("Arial", LABEL_FONT_SIZE)
+        # Divide by zoom so the drawn size in image-space maps to a constant screen-space size.
+        r = POINT_RADIUS / self._zoom
+        font_size = max(1, round(LABEL_FONT_SIZE / self._zoom))
+        font = QFont("Arial", font_size)
         font.setBold(True)
         painter.setFont(font)
 
@@ -213,17 +216,17 @@ class ImageCanvas(QWidget):
             is_selected = p.index == self._selected_index
             color = COLOR_SELECTED if is_selected else (COLOR_LABELED if p.label else COLOR_UNLABELED)
 
-            pen = QPen(QColor(0, 0, 0, 180), 1.5)
+            pen = QPen(QColor(0, 0, 0, 180), 1.5 / self._zoom)
             painter.setPen(pen)
             painter.setBrush(color)
             painter.drawEllipse(
-                int(p.x) - POINT_RADIUS, int(p.y) - POINT_RADIUS,
-                POINT_RADIUS * 2, POINT_RADIUS * 2
+                int(p.x - r), int(p.y - r),
+                int(r * 2), int(r * 2)
             )
 
             if p.label:
                 painter.setPen(QPen(QColor(0, 0, 0)))
-                painter.drawText(int(p.x) + POINT_RADIUS + 2, int(p.y) + 4, p.label[:6])
+                painter.drawText(int(p.x + r + 2 / self._zoom), int(p.y + 4 / self._zoom), p.label[:6])
 
     # ------------------------------------------------------------------ events
 
