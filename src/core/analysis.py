@@ -175,3 +175,117 @@ def coverage_with_ci(
         ci_lo, ci_hi = wilson_confidence_interval(cnt, total, confidence)
         result[code] = {"pct": pct, "ci_lower": ci_lo, "ci_upper": ci_hi}
     return result
+
+
+# ---------------------------------------------------------------------------
+# Ecological indices — Fase 1 (Lapis 2)
+# ---------------------------------------------------------------------------
+
+def _codes_of_group(coral_groups: list[dict], group_name: str) -> set[str]:
+    """Return the set of codes belonging to group_name (case-insensitive).
+
+    Returns an empty set if the group is not found.
+    """
+    target = group_name.strip().lower()
+    for g in coral_groups:
+        if g.get("name", "").strip().lower() == target:
+            return set(g.get("codes", []))
+    return set()
+
+
+def mortality_index(labels: list[str], coral_groups: list[dict]) -> Optional[float]:
+    """Mortality Index (MI) = dead / (live_hard_coral + dead).
+
+    dead            = count of points in group 'Dead Coral'
+    live_hard_coral = count of points in group 'Hard Coral'
+    Range 0..1; higher value = more coral mortality.
+    Returns None when (live + dead) == 0 or neither group is found.
+    """
+    dead_codes = _codes_of_group(coral_groups, "Dead Coral")
+    hc_codes = _codes_of_group(coral_groups, "Hard Coral")
+    dead = sum(1 for lbl in labels if lbl in dead_codes)
+    live = sum(1 for lbl in labels if lbl in hc_codes)
+    denom = live + dead
+    if denom == 0:
+        return None
+    return round(dead / denom, 4)
+
+
+def reef_health_category(live_coral_pct: float) -> dict:
+    """Classify reef health by Gomez & Yap (1988) / KepMen LH No.4/2001.
+
+    Thresholds based on % live hard coral cover:
+      [0, 25)   -> Buruk    (Poor)
+      [25, 50)  -> Sedang   (Fair)
+      [50, 75)  -> Baik     (Good)
+      [75, 100] -> Sangat Baik (Excellent)
+
+    Returns {'category': str, 'category_en': str, 'live_coral_pct': float}.
+    """
+    pct = live_coral_pct
+    if pct < 25:
+        cat, cat_en = "Buruk", "Poor"
+    elif pct < 50:
+        cat, cat_en = "Sedang", "Fair"
+    elif pct < 75:
+        cat, cat_en = "Baik", "Good"
+    else:
+        cat, cat_en = "Sangat Baik", "Excellent"
+    return {"category": cat, "category_en": cat_en, "live_coral_pct": round(pct, 2)}
+
+
+def coral_algae_ratio(labels: list[str], coral_groups: list[dict]) -> Optional[float]:
+    """Coral-to-algae ratio = live_hard_coral_pct / algae_pct.
+
+    >1 = coral-dominated (healthy); <1 = algae-dominated (phase shift risk).
+    Returns None when algae_pct == 0 or either group is missing.
+    """
+    if not labels:
+        return None
+    total = len(labels)
+    hc_codes = _codes_of_group(coral_groups, "Hard Coral")
+    algae_codes = _codes_of_group(coral_groups, "Algae")
+    hc_pct = sum(1 for lbl in labels if lbl in hc_codes) / total * 100
+    algae_pct = sum(1 for lbl in labels if lbl in algae_codes) / total * 100
+    if algae_pct == 0:
+        return None
+    return round(hc_pct / algae_pct, 4)
+
+
+def berger_parker_dominance(labels: list[str]) -> float:
+    """Berger-Parker dominance d = n_max / N.
+
+    Proportion of the most abundant category. Range 0..1.
+    Returns 0.0 when labels is empty.
+    """
+    if not labels:
+        return 0.0
+    counts: dict[str, int] = {}
+    for lbl in labels:
+        counts[lbl] = counts.get(lbl, 0) + 1
+    return round(max(counts.values()) / len(labels), 4)
+
+
+def hill_numbers(labels: list[str]) -> dict:
+    """Hill numbers — effective number of species at three diversity orders.
+
+    q0 = species richness (S)
+    q1 = exp(Shannon H')          — exponential Shannon
+    q2 = 1 / Simpson_D            — Simpson_D = sum(p_i^2)
+
+    For a perfectly even community, q0 == q1 == q2 == S.
+    Returns {'q0': int, 'q1': float, 'q2': float}.
+    """
+    if not labels:
+        return {"q0": 0, "q1": 0.0, "q2": 0.0}
+    counts: dict[str, int] = {}
+    for lbl in labels:
+        counts[lbl] = counts.get(lbl, 0) + 1
+    N = len(labels)
+    q0 = len(counts)
+    H = -sum((c / N) * math.log(c / N) for c in counts.values())
+    # Simpson concentration: sum of squared proportions
+    D = sum((c / N) ** 2 for c in counts.values())
+    q1 = round(math.exp(H), 4) if H > 0 else 1.0
+    q2 = round(1 / D, 4) if D > 0 else float("inf")
+    return {"q0": q0, "q1": q1, "q2": q2}

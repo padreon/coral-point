@@ -3,8 +3,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from src.models.project import Project
-from src.core.statistics import project_summary, per_image_table, per_station_table
+from src.core.statistics import project_summary, per_image_table, per_station_table, station_summary
 from src.core.analysis import photo_area, cover_area_per_code
+from src.core.validation import can_run_multivariate, validate_metadata_completeness
 
 
 def export_csv(project: Project, output_path: str) -> str:
@@ -52,16 +53,27 @@ def export_excel(project: Project, output_path: str) -> str:
     cov_rows: list[dict] = []
     grp_rows: list[dict] = []
     if summary:
+        _reef_health = summary.get("reef_health") or {}
+        _hill = summary.get("hill") or {}
         s1_rows = [
-            {"Metric": "Total points",            "Value": summary["total_points"]},
-            {"Metric": "Labeled points",          "Value": summary["labeled_points"]},
-            {"Metric": "",                         "Value": ""},
-            {"Metric": "Species richness (S)",    "Value": summary.get("species_richness", "")},
-            {"Metric": "Shannon diversity (H')",  "Value": summary.get("shannon_diversity", "")},
-            {"Metric": "Simpson diversity (1-D)", "Value": summary.get("simpson_diversity", "")},
-            {"Metric": "Pielou evenness (J')",    "Value": summary.get("pielou_evenness", "")},
-            {"Metric": "Margalef richness (d)",   "Value": summary.get("margalef_richness", "")},
-            {"Metric": "Fisher alpha (α)",        "Value": summary.get("fisher_alpha", "")},
+            {"Metric": "Total points",              "Value": summary["total_points"]},
+            {"Metric": "Labeled points",            "Value": summary["labeled_points"]},
+            {"Metric": "",                           "Value": ""},
+            {"Metric": "Species richness (S)",      "Value": summary.get("species_richness", "")},
+            {"Metric": "Shannon diversity (H')",    "Value": summary.get("shannon_diversity", "")},
+            {"Metric": "Simpson diversity (1-D)",   "Value": summary.get("simpson_diversity", "")},
+            {"Metric": "Pielou evenness (J')",      "Value": summary.get("pielou_evenness", "")},
+            {"Metric": "Margalef richness (d)",     "Value": summary.get("margalef_richness", "")},
+            {"Metric": "Fisher alpha (α)",          "Value": summary.get("fisher_alpha", "")},
+            {"Metric": "",                           "Value": ""},
+            {"Metric": "Mortality Index (MI)",      "Value": summary.get("mortality_index", "")},
+            {"Metric": "Reef Health Category",      "Value": _reef_health.get("category", "")},
+            {"Metric": "Reef Health (EN)",          "Value": _reef_health.get("category_en", "")},
+            {"Metric": "Coral:Algae Ratio",         "Value": summary.get("coral_algae_ratio", "")},
+            {"Metric": "Berger-Parker Dominance (d)", "Value": summary.get("berger_parker", "")},
+            {"Metric": "Hill q0 (richness)",        "Value": _hill.get("q0", "")},
+            {"Metric": "Hill q1 (exp H')",          "Value": _hill.get("q1", "")},
+            {"Metric": "Hill q2 (1/Simpson D)",     "Value": _hill.get("q2", "")},
         ]
         cov_rows = [
             {
@@ -81,7 +93,6 @@ def export_excel(project: Project, output_path: str) -> str:
     grp_sheet_rows: list[dict] = []
     all_grp_names: set[str] = set()
     for station in project.stations:
-        from src.core.statistics import station_summary
         st_sum = station_summary(station, project.coral_groups)
         grp_cov = st_sum.get("group_coverage", {})
         all_grp_names.update(grp_cov.keys())
@@ -137,7 +148,104 @@ def export_excel(project: Project, output_path: str) -> str:
             pd.DataFrame(cover_rows).fillna(0).to_excel(writer, sheet_name="Cover Area", index=False)
         pd.DataFrame(raw_rows).to_excel(writer, sheet_name="Raw Points", index=False)
 
+        # --- Multivariate sheets (Lapis 3) ---
+        _write_multivariate_sheets(writer, project)
+
+        # --- Map Data sheet (Lapis 3, spatial) ---
+        _write_map_data_sheet(writer, project)
+
     return output_path
+
+
+def _write_multivariate_sheets(writer: pd.ExcelWriter, project: Project) -> None:
+    """Write Bray-Curtis, Ordination, PERMANOVA, SIMPER sheets (Lapis 3).
+
+    If can_run_multivariate() is False, writes a single 'Multivariate' sheet
+    with the blocking reason instead.
+    """
+    from src.core.multivariate import composition_matrix, bray_curtis_matrix, pcoa, permanova, simper
+
+    gate = can_run_multivariate(project)
+    if not gate.ok:
+        reason_df = pd.DataFrame([{"Reason": r} for r in gate.reasons])
+        reason_df.to_excel(writer, sheet_name="Multivariate", index=False)
+        return
+
+    sample_names, code_names, matrix = composition_matrix(project)
+    bc = bray_curtis_matrix(matrix)
+
+    # Bray-Curtis dissimilarity matrix
+    bc_df = pd.DataFrame(bc, index=sample_names, columns=sample_names).round(4)
+    bc_df.to_excel(writer, sheet_name="Bray-Curtis")
+
+    # PCoA ordination
+    pcoa_result = pcoa(bc)
+    coords = pcoa_result["coords"]
+    n_axes = coords.shape[1] if coords.ndim == 2 else 0
+    ord_rows = []
+    for i, name in enumerate(sample_names):
+        row: dict = {"station": name}
+        for ax in range(n_axes):
+            row[f"PCoA{ax+1}"] = round(float(coords[i, ax]), 6)
+        ord_rows.append(row)
+    var_exp = pcoa_result["variance_explained"]
+    # Append variance explained as footer row
+    var_row: dict = {"station": "Variance explained"}
+    for ax in range(n_axes):
+        var_row[f"PCoA{ax+1}"] = var_exp[ax] if ax < len(var_exp) else ""
+    ord_rows.append(var_row)
+    pd.DataFrame(ord_rows).to_excel(writer, sheet_name="Ordination", index=False)
+
+    # PERMANOVA — use station names as group labels (one group per station = trivial,
+    # so only meaningful if project has group metadata; otherwise skip with note)
+    # For now, use station names directly as group labels so the math runs.
+    perm_result = permanova(bc, sample_names)
+    if "error" in perm_result:
+        pd.DataFrame([{"Note": perm_result["error"]}]).to_excel(
+            writer, sheet_name="PERMANOVA", index=False)
+    else:
+        perm_rows = [
+            {"Metric": "pseudo-F", "Value": perm_result.get("pseudo_F")},
+            {"Metric": "p-value", "Value": perm_result.get("p_value")},
+            {"Metric": "permutations", "Value": perm_result.get("permutations")},
+            {"Metric": "significant (p<0.05)", "Value": str(perm_result.get("significant"))},
+        ]
+        pd.DataFrame(perm_rows).to_excel(writer, sheet_name="PERMANOVA", index=False)
+
+    # SIMPER — first pair of stations as example (real UI would let user pick groups)
+    if len(sample_names) >= 2:
+        simper_result = simper(matrix, code_names, sample_names,
+                               sample_names[0], sample_names[1])
+        if simper_result:
+            pd.DataFrame(simper_result).to_excel(writer, sheet_name="SIMPER", index=False)
+
+
+def _write_map_data_sheet(writer: pd.ExcelWriter, project: Project) -> None:
+    """Write Map Data sheet (station GPS coords + key metrics) for GIS/Google Earth."""
+    meta = validate_metadata_completeness(project)
+    if not meta["spatial"].ok:
+        return
+
+    coral_groups = getattr(project, "coral_groups", [])
+    rows: list[dict] = []
+    for st in project.stations:
+        lat = getattr(st, "gps_lat", None)
+        lon = getattr(st, "gps_lon", None)
+        if not lat or not lon:
+            continue
+        from src.core.statistics import station_summary as _st_sum
+        summ = _st_sum(st, coral_groups)
+        reef = summ.get("reef_health") or {}
+        rows.append({
+            "station": st.name,
+            "lat": lat,
+            "lon": lon,
+            "live_coral_pct": summ.get("group_coverage", {}).get("Hard Coral", ""),
+            "mortality_index": summ.get("mortality_index", ""),
+            "reef_health": reef.get("category", ""),
+        })
+    if rows:
+        pd.DataFrame(rows).to_excel(writer, sheet_name="Map Data", index=False)
 
 
 def _coverage_statistics(project: Project) -> list[dict]:

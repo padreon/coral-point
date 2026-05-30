@@ -419,6 +419,9 @@ class MainWindow(QMainWindow):
         view_menu.addAction("Zoom Out", "Ctrl+-", self.canvas.zoom_out)
         view_menu.addAction("Fit to Window", "Ctrl+0", self.canvas.zoom_fit)
 
+        analysis_menu = menubar.addMenu("&Analisa")
+        analysis_menu.addAction("Analisa Lanjutan…", self._open_analysis_dialog)
+
         help_menu = menubar.addMenu("&Help")
         help_menu.addAction("Open Log File…", self._open_log_file)
         help_menu.addSeparator()
@@ -931,6 +934,14 @@ class MainWindow(QMainWindow):
             self._set_status(f"Exported {n} coral codes to: {path}")
         except Exception as exc:
             QMessageBox.warning(self, "Export Failed", str(exc))
+
+    def _open_analysis_dialog(self):
+        if not self.project:
+            QMessageBox.information(self, "Analisa Lanjutan", "Buka atau buat project terlebih dahulu.")
+            return
+        from src.ui.analysis_dialog import AnalysisDialog
+        dlg = AnalysisDialog(self.project, self)
+        dlg.exec()
 
     def _show_stats(self):
         if not self.project:
