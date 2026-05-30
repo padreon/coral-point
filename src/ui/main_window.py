@@ -97,6 +97,22 @@ class FlowLayout(QLayout):
         return y + row_h - rect.y() + m.bottom()
 
 
+class _CodesScrollArea(QScrollArea):
+    """Scroll area that forces content width = viewport width to drive FlowLayout wrapping."""
+
+    def updateLayout(self) -> None:
+        w = self.widget()
+        if w is None or w.layout() is None:
+            return
+        vw = self.viewport().width()
+        h = w.layout().heightForWidth(vw)
+        w.setFixedSize(vw, max(h if h >= 0 else w.sizeHint().height(), 40))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.updateLayout()
+
+
 class ThumbnailLoader(QThread):
     """Loads 48x48 thumbnails off the main thread and emits QImage (not QPixmap) per path."""
     thumbnail_ready = pyqtSignal(str, QImage)
@@ -341,7 +357,6 @@ class MainWindow(QMainWindow):
         self._ai_worker: AILabelWorker | None = None
 
         _s = QSettings("coralX", "coralX")
-        self._code_btn_min_width: int = int(_s.value("ui/code_btn_min_width", 44))
 
         self._build_ui()
         self._build_menu()
@@ -607,15 +622,6 @@ class MainWindow(QMainWindow):
         self._sort_combo.addItems(["Frequency ↓", "A → Z"])
         self._sort_combo.currentIndexChanged.connect(self._refresh_codes_panel)
         header.addWidget(self._sort_combo)
-        header.addWidget(QLabel("Min W:"))
-        self._btn_size_spin = QSpinBox()
-        self._btn_size_spin.setRange(30, 120)
-        self._btn_size_spin.setValue(self._code_btn_min_width)
-        self._btn_size_spin.setSuffix("px")
-        self._btn_size_spin.setFixedWidth(66)
-        self._btn_size_spin.setToolTip("Minimum button width — buttons expand to fill available space")
-        self._btn_size_spin.valueChanged.connect(self._on_code_btn_size_changed)
-        header.addWidget(self._btn_size_spin)
         btn_add_code = QPushButton("+ Code")
         btn_add_code.clicked.connect(self._add_coral_code)
         header.addWidget(btn_add_code)
@@ -624,10 +630,10 @@ class MainWindow(QMainWindow):
         header.addWidget(btn_groups)
         panel_layout.addLayout(header)
 
-        self._codes_scroll = QScrollArea()
+        self._codes_scroll = _CodesScrollArea()
         self._codes_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._codes_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._codes_scroll.setWidgetResizable(True)
+        self._codes_scroll.setWidgetResizable(False)
         self._codes_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         panel_layout.addWidget(self._codes_scroll)
 
@@ -657,13 +663,9 @@ class MainWindow(QMainWindow):
         if ungrouped:
             display_groups.append({"name": "Other", "codes": ungrouped})
 
-        # Font size scales proportionally with min button width
-        font_px = max(7, min(11, self._code_btn_min_width * 9 // 44))
-
         content = QWidget()
-        outer_row = QHBoxLayout(content)
-        outer_row.setContentsMargins(4, 2, 4, 2)
-        outer_row.setSpacing(6)
+        flow = FlowLayout(content, h_spacing=8, v_spacing=4)
+        flow.setContentsMargins(4, 2, 4, 2)
 
         for group in display_groups:
             group_codes = [c for c in group.get("codes", []) if c in codes]
@@ -701,38 +703,31 @@ class MainWindow(QMainWindow):
             for code in group_codes:
                 count = freq.get(code, 0)
                 btn = QPushButton(f"{code}\n{count}")
-                btn.setMinimumWidth(self._code_btn_min_width)
-                btn.setFixedHeight(36)
-                btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                btn.setMinimumSize(QSize(44, 34))
+                btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
                 btn.setToolTip(f"{code} — {codes[code]}")
                 btn.setStyleSheet(
-                    f"QPushButton {{ font-size: {font_px}px; font-weight: bold; padding: 0 2px; }}"
+                    "QPushButton { font-size: 9px; font-weight: bold; padding: 1px 4px; }"
                     "QPushButton:hover { background: #3a6ea5; color: white; }"
                 )
                 btn.clicked.connect(lambda checked, c=code: self._label_selected_point(c))
-                btn_row.addWidget(btn, stretch=1)
+                btn_row.addWidget(btn)
 
             grp_layout.addLayout(btn_row)
-            # stretch proportional to code count so wider groups get more space
-            outer_row.addWidget(grp_widget, stretch=len(group_codes))
+            flow.addWidget(grp_widget)
 
         self._codes_scroll.setWidget(content)
+        QTimer.singleShot(0, self._codes_scroll.updateLayout)
 
     def _build_statusbar(self):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
         self._set_status("Ready")
 
-    def _on_code_btn_size_changed(self, value: int) -> None:
-        self._code_btn_min_width = value
-        QSettings("coralX", "coralX").setValue("ui/code_btn_min_width", value)
-        self._refresh_codes_panel()
-
     def closeEvent(self, event) -> None:
         s = QSettings("coralX", "coralX")
         s.setValue("ui/h_splitter", self._h_splitter.saveState())
         s.setValue("ui/v_splitter", self._v_splitter.saveState())
-        s.setValue("ui/code_btn_min_width", self._code_btn_min_width)
         super().closeEvent(event)
 
     # ----------------------------------------------------------------- actions
