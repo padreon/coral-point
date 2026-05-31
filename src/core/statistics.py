@@ -9,6 +9,11 @@ from src.core.analysis import (
     coverage_with_ci,
     cover_area_per_code,
     photo_area,
+    mortality_index,
+    reef_health_category,
+    coral_algae_ratio,
+    berger_parker_dominance,
+    hill_numbers,
 )
 
 
@@ -129,9 +134,23 @@ def per_station_table(project: Project) -> list[dict]:
             row.update({k: round(v / total_labeled * 100, 2) for k, v in counts.items()})
 
         # Group coverage
-        grp_cov = group_coverage(labels, project.coral_groups if hasattr(project, "coral_groups") else [])
+        coral_groups_list = project.coral_groups if hasattr(project, "coral_groups") else []
+        grp_cov = group_coverage(labels, coral_groups_list)
         for grp, pct in grp_cov.items():
             row[f"group_{grp}"] = pct
+
+        # Ecological indices (Lapis 2)
+        live_coral_pct = grp_cov.get("Hard Coral", 0.0)
+        mi = mortality_index(labels, coral_groups_list)
+        health = reef_health_category(live_coral_pct)
+        row["mortality_index"] = mi
+        row["reef_health_category"] = health["category"]
+        row["coral_algae_ratio"] = coral_algae_ratio(labels, coral_groups_list)
+        row["berger_parker"] = berger_parker_dominance(labels)
+        hill = hill_numbers(labels)
+        row["hill_q0"] = hill["q0"]
+        row["hill_q1"] = hill["q1"]
+        row["hill_q2"] = hill["q2"]
 
         rows.append(row)
     return rows
@@ -169,6 +188,13 @@ def _summary_from_annotations(
     ci_data = coverage_with_ci(all_labels)
     grp_cov = group_coverage(all_labels, coral_groups or [])
 
+    live_coral_pct = grp_cov.get("Hard Coral", 0.0)
+    mi = mortality_index(all_labels, coral_groups or [])
+    health = reef_health_category(live_coral_pct)
+    car = coral_algae_ratio(all_labels, coral_groups or [])
+    bp = berger_parker_dominance(all_labels)
+    hill = hill_numbers(all_labels)
+
     return {
         "coverage": coverage,
         "coverage_ci": ci_data,
@@ -181,6 +207,11 @@ def _summary_from_annotations(
         "fisher_alpha": round(alpha, 4),
         "total_points": total_points,
         "labeled_points": labeled_points,
+        "mortality_index": mi,
+        "reef_health": health,
+        "coral_algae_ratio": car,
+        "berger_parker": bp,
+        "hill": hill,
     }
 
 
