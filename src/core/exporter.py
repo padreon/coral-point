@@ -85,7 +85,6 @@ def export_excel(
             {"Metric": "",                           "Value": ""},
             {"Metric": "Mortality Index (MI)",      "Value": summary.get("mortality_index", "")},
             {"Metric": "Reef Health Category",      "Value": _reef_health.get("category", "")},
-            {"Metric": "Reef Health (EN)",          "Value": _reef_health.get("category_en", "")},
             {"Metric": "Coral:Algae Ratio",         "Value": summary.get("coral_algae_ratio", "")},
             {"Metric": "Berger-Parker Dominance (d)", "Value": summary.get("berger_parker", "")},
             {"Metric": "Hill q0 (richness)",        "Value": _hill.get("q0", "")},

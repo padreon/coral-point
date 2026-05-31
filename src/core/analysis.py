@@ -220,18 +220,18 @@ def reef_health_category(live_coral_pct: float) -> dict:
       [50, 75)  -> Baik     (Good)
       [75, 100] -> Sangat Baik (Excellent)
 
-    Returns {'category': str, 'category_en': str, 'live_coral_pct': float}.
+    Returns {'category': str, 'live_coral_pct': float}.
     """
     pct = live_coral_pct
     if pct < 25:
-        cat, cat_en = "Buruk", "Poor"
+        cat = "Poor"
     elif pct < 50:
-        cat, cat_en = "Sedang", "Fair"
+        cat = "Fair"
     elif pct < 75:
-        cat, cat_en = "Baik", "Good"
+        cat = "Good"
     else:
-        cat, cat_en = "Sangat Baik", "Excellent"
-    return {"category": cat, "category_en": cat_en, "live_coral_pct": round(pct, 2)}
+        cat = "Excellent"
+    return {"category": cat, "live_coral_pct": round(pct, 2)}
 
 
 def coral_algae_ratio(labels: list[str], coral_groups: list[dict]) -> Optional[float]:

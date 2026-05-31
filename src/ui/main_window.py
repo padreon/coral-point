@@ -1014,6 +1014,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Export Excel", "", "Excel (*.xlsx)")
         if not path or not self.project:
             return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
 
         _project = self.project
 

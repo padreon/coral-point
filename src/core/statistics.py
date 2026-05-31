@@ -145,7 +145,6 @@ def per_station_table(project: Project) -> list[dict]:
         health = reef_health_category(live_coral_pct)
         row["mortality_index"] = mi
         row["reef_health_category"] = health["category"]
-        row["reef_health_category_en"] = health["category_en"]
         row["coral_algae_ratio"] = coral_algae_ratio(labels, coral_groups_list)
         row["berger_parker"] = berger_parker_dominance(labels)
         hill = hill_numbers(labels)
